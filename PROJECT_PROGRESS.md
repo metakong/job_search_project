@@ -235,3 +235,12 @@ This file tracks all changes, architectural decisions, and feature implementatio
   - **README.md Overhaul for Open Source**: Completely rewrote `README.md` for the general public and GitHub deployment at `https://github.com/metakong/job_search_project`. Emphasizes zero-Python setup requirement, browser-native PWA architecture, and includes: quick-start guide with multiple serving options (Python, npx, VS Code Live Server, static hosting), supported high-signal job categories table, full architecture diagram, project structure, contributing guidelines, and roadmap.
   - **Legacy Cleanup (.agents/AGENTS.md)**: Replaced the outdated `.agents/AGENTS.md` which still referenced Python-specific constraints (ARM64, `ujson`, `re.compile`, `try-except`) with the current Phase 11 JavaScript/PWA-aligned constraints (Dexie.js, Web Workers, IndexedDB, UI modal rules).
   - **Verification**: Confirmed all prior Phase 11.1–11.3 changes remain intact: setup wizard scroll fix (`max-height: 85vh`, `overflow-y: auto`, `overscroll-behavior: contain`), `.no-scroll` body lock, ESC prevention, high-signal query mapping, pipeline transparency stats, and Remote-No-Local-Presence kill switch removal.
+
+### Phase 11.5: Security Patch & Legacy Purge
+- **Status**: Completed
+- **Changes**:
+  - **Credential Security**: Untracked `.env` (containing PocketBase admin credentials) and `three_api_keys_info.txt` (containing Jooble, Adzuna, and RapidAPI keys) from Git via `git rm --cached`. Updated `.gitignore` with credential entries at the top. Local files remain untouched on disk.
+  - **IDE Config Cleanup**: Also untracked `.claude/settings.local.json` and added `.claude/` to `.gitignore`.
+  - **Legacy Backend Purge**: Deleted all deprecated Python and PowerShell files from the repository: `cleaner.py`, `evaluator.py`, `logger.py`, `reset_pipeline.py`, `setup_pocketbase.py`, `test.py`, `test2.py`, `test_phase_2.py`, `Run_Job_Sweep.ps1`, `Sweep.ps1`, `setup_scheduled_task.ps1`, `cleansing_stats.json`, `sweep_log.json`, and the `scripts/` and `core/` directories.
+  - **Double Security Audit**: Performed two security sweeps (pre-operation and post-staging) to verify: (1) credential files are NOT in the tracked file list, (2) no sensitive data appears in staged changes as additions, (3) legacy files are fully purged.
+  - **Note**: `requirements.txt` was retained as it was not in the deletion manifest. The credentials from the initial push remain in Git history — the repository owner should rotate all exposed keys immediately.
