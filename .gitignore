@@ -1,27 +1,31 @@
-# Ignore virtual environment
+# ── Sensitive Credentials (NEVER commit these) ───────────────────────
+.env
+three_api_keys_info.txt
+
+# ── Virtual Environments ─────────────────────────────────────────────
 .venv/
 venv/
 ENV/
 env/
 
-# Ignore PocketBase local data directory (IndexedDB is used for public PWA)
+# ── PocketBase local data ────────────────────────────────────────────
 pb_data/
 
-# Ignore local JIT / system generated log and backup files
+# ── IDE / Tool Configuration ─────────────────────────────────────────
+.claude/
+
+# ── Python Caches & Bytecode ─────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# ── Logs & Temp Files ────────────────────────────────────────────────
 *.log
 *.tmp
 *.bak
 *.json.bak
-cleansing_stats.json
-sweep_log.json
-jit_scraper.log
-pip_*.log
 
-# Python cache files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# OS generated files
+# ── OS Generated Files ──────────────────────────────────────────────
 .DS_Store
 Thumbs.db
