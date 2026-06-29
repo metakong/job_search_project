@@ -3,14 +3,16 @@
 // =====================================================================
 
 const rssAdapter = {
-    async fetchJobs(query, location = 'Springfield, MO', maxPages = 5) {
-        console.log(`[Indeed RSS] Starting sweep for query: "${query}" in "${location}"`);
+    async fetchJobs(queries, location = 'Springfield, MO', maxPages = 5) {
+        if (!Array.isArray(queries)) queries = [queries];
+        console.log(`[Indeed RSS] Starting sweep for queries: ${JSON.stringify(queries)} in "${location}"`);
         const results = [];
         
-        // Indeed RSS pagination offset is usually in increments of 10 or 20.
-        // We will fetch offsets 0, 10, 20, 30, 40 to get up to 5 pages.
-        for (let page = 0; page < maxPages; page++) {
-            const start = page * 10;
+        for (const query of queries) {
+            // Indeed RSS pagination offset is usually in increments of 10 or 20.
+            // We will fetch offsets 0, 10, 20, 30, 40 to get up to 5 pages.
+            for (let page = 0; page < maxPages; page++) {
+                const start = page * 10;
             // Build Indeed RSS URL. Standard format is:
             // https://www.indeed.com/rss?q=QUERY&l=LOCATION&start=START
             const url = `https://www.indeed.com/rss?q=${encodeURIComponent(query)}&l=${encodeURIComponent(location)}&start=${start}`;
@@ -99,12 +101,19 @@ const rssAdapter = {
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 
             } catch (err) {
-                console.error(`[Indeed RSS] Error fetching page ${page}:`, err);
+                console.error(`[Indeed RSS] Error fetching page ${page} for query "${query}":`, err);
                 break; // Stop paginating if request fails
             }
         }
+        }
         
-        return results;
+        // Deduplicate using a Map
+        const uniqueResults = new Map();
+        for (const r of results) {
+            uniqueResults.set(r.payload_hash, r);
+        }
+        
+        return Array.from(uniqueResults.values());
     }
 };
 

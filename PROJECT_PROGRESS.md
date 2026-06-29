@@ -262,3 +262,11 @@ This file tracks all changes, architectural decisions, and feature implementatio
   - **Legacy Data Graceful Fallback**: Modified the `getJobs` query in `db-adapter.js` to handle older scraped jobs lacking a `computed_zone` property, safely defaulting them to `'strike'` so they remain visible in the UI rather than turning into invisible ghosts.
   - **Bulletproofed Inferno Flag**: Hardened the Dante's Inferno override logic in `scoring-coordinator.js` to securely reference the evaluator payload without triggering `ReferenceError` crashes on undefined `eligibility` properties.
   - **Console Verification**: Added verbose filter logging in `app.js` to prove `currentZone` state accurately passes down into the IndexedDB query logic.
+
+### Phase 11.9: Ingestion Spigot Uncorking & Relevance Math
+- **Status**: Completed
+- **Changes**:
+  - **Atomic Query Mapping**: Modified `setup-wizard.js` to produce a flattened array of distinct atomic strings rather than single boolean OR strings for search queries, bypassing API limitations.
+  - **Multi-Request Iteration**: Updated `rss-adapter.js` and `remotive-api.js` to iterate over the `queries` array, dispatching independent fetch requests per string and deduplicating results via `payload_hash`.
+  - **The Relevance Floor**: Enforced a `deltaX < 0.15` filter inside `scoreAndClassifyJob()` in `scoring-coordinator.js` to automatically categorize jobs with near-zero skill overlap as `noise`. Prevented `recalculatePercentiles` from overwriting this zone.
+  - **UI Noise Filtering**: Hardened `db-adapter.js` `getJobs()` logic to actively discard jobs where `computed_zone === 'noise'` from all dashboard view payloads.

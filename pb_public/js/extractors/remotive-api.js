@@ -3,15 +3,17 @@
 // =====================================================================
 
 const remotiveApi = {
-    async fetchJobs(query) {
-        console.log(`[Remotive API] Fetching jobs for query: "${query}"`);
+    async fetchJobs(queries) {
+        if (!Array.isArray(queries)) queries = [queries];
+        console.log(`[Remotive API] Fetching jobs for queries: ${JSON.stringify(queries)}`);
         const results = [];
         
-        // Remotive API search format: https://remotive.com/api/remote-jobs?search=QUERY
-        // We will fetch through CORS proxy
-        const url = `https://remotive.com/api/remote-jobs?search=${encodeURIComponent(query)}`;
-        
-        try {
+        for (const query of queries) {
+            // Remotive API search format: https://remotive.com/api/remote-jobs?search=QUERY
+            // We will fetch through CORS proxy
+            const url = `https://remotive.com/api/remote-jobs?search=${encodeURIComponent(query)}`;
+            
+            try {
             const response = await window.fetchWithCORS(url);
             const data = await response.json();
             
@@ -89,10 +91,20 @@ const remotiveApi = {
             }
             
         } catch (err) {
-            console.error('[Remotive API] Fetch failed:', err);
+            console.error(`[Remotive API] Fetch failed for query "${query}":`, err);
         }
         
-        return results;
+        // Brief pause between requests
+        await new Promise(resolve => setTimeout(resolve, 500));
+        }
+        
+        // Deduplicate using a Map
+        const uniqueResults = new Map();
+        for (const r of results) {
+            uniqueResults.set(r.payload_hash, r);
+        }
+        
+        return Array.from(uniqueResults.values());
     }
 };
 

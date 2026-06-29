@@ -155,15 +155,15 @@ const setupWizard = {
             const search_queries = [];
             if (document.getElementById('wizard-cat-sales').checked) {
                 categories.push('sales');
-                search_queries.push('"Business Development" OR "Revenue Operations" OR "Sales Director" OR "Consultative Sales"');
+                search_queries.push("Business Development", "Revenue Operations", "Sales Director", "Account Executive");
             }
             if (document.getElementById('wizard-cat-ops').checked) {
                 categories.push('operations');
-                search_queries.push('"Operations Manager" OR "Process Improvement" OR "Turnaround" OR "Strategy"');
+                search_queries.push("Operations Manager", "Process Improvement", "Strategy", "Chief of Staff");
             }
             if (document.getElementById('wizard-cat-tech').checked) {
                 categories.push('tech');
-                search_queries.push('"AI Evaluator" OR "Systems Architecture" OR "Data Operations"');
+                search_queries.push("AI Systems", "Data Operations", "Systems Architecture");
             }
 
             const profileUpdates = {

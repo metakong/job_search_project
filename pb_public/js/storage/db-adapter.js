@@ -47,7 +47,7 @@ const dbAdapter = {
             let items = await collection.toArray();
 
             // 1. Filter out duplicates or non-eligible unless specified
-            items = items.filter(item => item.is_eligible !== false);
+            items = items.filter(item => item.is_eligible !== false && item.computed_zone !== 'noise');
 
             // 1b. Zone filter
             if (filters.zone && filters.zone !== 'all') {

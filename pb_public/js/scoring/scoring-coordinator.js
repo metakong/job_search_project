@@ -372,24 +372,29 @@ const scoringCoordinator = {
         // Normalize Skill Match: 5+ matches = 100% (1.0)
         let deltaX = Math.min(1.0, (skillMatchScore || 0) / 5.0); 
 
-        // 3. Apply Strategy Categorization
-        const strategy = parseInt(userProfile.strategyDial || 2);
-        
-        if (strategy === 1) { // Survival Mode
-            if (deltaY < 0 && deltaX >= 0.4) computedZone = 'safety';
-            else if (deltaY > 0) computedZone = 'moonshot';
-            else computedZone = 'strike';
-        } else if (strategy === 3) { // Aggressive Growth
-            if (deltaY > 0 || deltaX < 0.6) computedZone = 'moonshot';
-            else if (deltaY < 0 && deltaX >= 0.8) computedZone = 'safety';
-            else computedZone = 'strike';
-        } else { // Balanced Mode
-            if (deltaY < 0 && deltaX >= 0.8) computedZone = 'safety';
-            else if (deltaY > 0 || deltaX < 0.4) computedZone = 'moonshot';
-            else computedZone = 'strike';
+        // 3. The Relevance Floor (Discard absolute noise)
+        if (deltaX < 0.15) {
+            computedZone = 'noise';
+        } else {
+            // 4. Strategy Categorization
+            const strategy = parseInt(userProfile.strategyDial || 2);
+            
+            if (strategy === 1) { // Survival Mode
+                if (deltaY < 0 && deltaX >= 0.4) computedZone = 'safety';
+                else if (deltaY > 0 && deltaX >= 0.3) computedZone = 'moonshot';
+                else computedZone = 'strike';
+            } else if (strategy === 3) { // Aggressive Growth
+                if (deltaY > 0 || (deltaY === 0 && deltaX < 0.5)) computedZone = 'moonshot';
+                else if (deltaY < 0 && deltaX >= 0.8) computedZone = 'safety';
+                else computedZone = 'strike';
+            } else { // Balanced Mode
+                if (deltaY < 0 && deltaX >= 0.7) computedZone = 'safety';
+                else if (deltaY > 0 && deltaX >= 0.4) computedZone = 'moonshot';
+                else computedZone = 'strike';
+            }
         }
         
-        // 4. Dante's Inferno Override
+        // 5. Dante's Inferno Override
         const eligibility = typeof elig !== 'undefined' ? elig : undefined;
         const isInferno = job.computed_zone === 'inferno' || (typeof eligibility !== 'undefined' && eligibility.computed_zone === 'inferno');
         if (isInferno) {
@@ -455,9 +460,9 @@ const scoringCoordinator = {
             else if (pct >= 20) tier = 'Tier 3 / Moderate Match';
             else tier = 'Tier 4 / Low Match';
 
-            // Reset matches to base zone unless classified as inferno
+            // Reset matches to base zone unless classified as inferno or noise
             let finalZone = job.computed_zone;
-            if (finalZone !== "inferno") {
+            if (finalZone !== "inferno" && finalZone !== "noise") {
                 // Apply Strategy Dial Modifiers
                 const strategy = parseInt(strategyDialVal || 2);
                 const dY = job.delta_y || 0;
@@ -465,15 +470,15 @@ const scoringCoordinator = {
                 
                 if (strategy === 1) { // Survival Mode
                     if (dY < 0 && dX >= 0.4) finalZone = 'safety';
-                    else if (dY > 0) finalZone = 'moonshot';
+                    else if (dY > 0 && dX >= 0.3) finalZone = 'moonshot';
                     else finalZone = 'strike';
                 } else if (strategy === 3) { // Aggressive Growth
-                    if (dY > 0 || dX < 0.6) finalZone = 'moonshot';
+                    if (dY > 0 || (dY === 0 && dX < 0.5)) finalZone = 'moonshot';
                     else if (dY < 0 && dX >= 0.8) finalZone = 'safety';
                     else finalZone = 'strike';
                 } else { // Balanced Mode
-                    if (dY < 0 && dX >= 0.8) finalZone = 'safety';
-                    else if (dY > 0 || dX < 0.4) finalZone = 'moonshot';
+                    if (dY < 0 && dX >= 0.7) finalZone = 'safety';
+                    else if (dY > 0 && dX >= 0.4) finalZone = 'moonshot';
                     else finalZone = 'strike';
                 }
             }
