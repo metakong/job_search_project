@@ -48,8 +48,46 @@ const resumeParser = {
         if (window.dbAdapter) {
             const profile = await window.dbAdapter.getUserProfile();
             profile.resumeText = text;
+
+            // Axis Y Calibration Math
+            let seniority = 1;
+            const textLower = text.toLowerCase();
+            if (/\bdirector\b|\bvp\b|vice president|\bfounder\b/i.test(textLower)) {
+                seniority = 4;
+            } else if (/\bmanager\b|\blead\b|\bsupervisor\b/i.test(textLower)) {
+                seniority = 3;
+            } else if (/\bsenior\b|\bsr\.\b|\bprincipal\b/i.test(textLower)) {
+                seniority = 2;
+            } else if (/\bcoordinator\b|\bspecialist\b|\brepresentative\b|\bassociate\b/i.test(textLower)) {
+                seniority = 1;
+            }
+            profile.user_baseline_seniority = seniority;
+
+            // Parse for salary anchors/numbers near currency markers
+            let salaryFloor = profile.salaryFloor || 40000;
+            const salaryRegex = /\$\s*([\d,]+)\s*(?:k|K)?\b/g;
+            let match;
+            let foundSalaries = [];
+            while ((match = salaryRegex.exec(text)) !== null) {
+                let val = parseFloat(match[1].replace(/,/g, ''));
+                if (val < 1000 && match[0].toLowerCase().includes('k')) {
+                    val *= 1000;
+                } else if (val < 250) {
+                    // Hourly rate likely, ignore or convert to annual
+                    val *= 2080;
+                }
+                if (val >= 20000 && val <= 350000) {
+                    foundSalaries.push(val);
+                }
+            }
+            if (foundSalaries.length > 0) {
+                // Set floor to the minimum of found salaries, or keep default
+                salaryFloor = Math.min(...foundSalaries);
+                profile.salaryFloor = salaryFloor;
+            }
+
             await window.dbAdapter.saveUserProfile(profile);
-            console.log('[Resume Parser] Resume text successfully persisted in IndexedDB user_profile.');
+            console.log(`[Resume Parser] Resume text successfully persisted in IndexedDB user_profile. Inferred seniority: ${seniority}, Inferred Salary Floor: ${salaryFloor}`);
             return true;
         }
         return false;

@@ -236,11 +236,12 @@ This file tracks all changes, architectural decisions, and feature implementatio
   - **Legacy Cleanup (.agents/AGENTS.md)**: Replaced the outdated `.agents/AGENTS.md` which still referenced Python-specific constraints (ARM64, `ujson`, `re.compile`, `try-except`) with the current Phase 11 JavaScript/PWA-aligned constraints (Dexie.js, Web Workers, IndexedDB, UI modal rules).
   - **Verification**: Confirmed all prior Phase 11.1–11.3 changes remain intact: setup wizard scroll fix (`max-height: 85vh`, `overflow-y: auto`, `overscroll-behavior: contain`), `.no-scroll` body lock, ESC prevention, high-signal query mapping, pipeline transparency stats, and Remote-No-Local-Presence kill switch removal.
 
-### Phase 11.5: Security Patch & Legacy Purge
+### Phase 11.6: The Probabilistic Labor Matrix & Inferno Classifier
 - **Status**: Completed
 - **Changes**:
-  - **Credential Security**: Untracked `.env` (containing PocketBase admin credentials) and `three_api_keys_info.txt` (containing Jooble, Adzuna, and RapidAPI keys) from Git via `git rm --cached`. Updated `.gitignore` with credential entries at the top. Local files remain untouched on disk.
-  - **IDE Config Cleanup**: Also untracked `.claude/settings.local.json` and added `.claude/` to `.gitignore`.
-  - **Legacy Backend Purge**: Deleted all deprecated Python and PowerShell files from the repository: `cleaner.py`, `evaluator.py`, `logger.py`, `reset_pipeline.py`, `setup_pocketbase.py`, `test.py`, `test2.py`, `test_phase_2.py`, `Run_Job_Sweep.ps1`, `Sweep.ps1`, `setup_scheduled_task.ps1`, `cleansing_stats.json`, `sweep_log.json`, and the `scripts/` and `core/` directories.
-  - **Double Security Audit**: Performed two security sweeps (pre-operation and post-staging) to verify: (1) credential files are NOT in the tracked file list, (2) no sensitive data appears in staged changes as additions, (3) legacy files are fully purged.
-  - **Note**: `requirements.txt` was retained as it was not in the deletion manifest. The credentials from the initial push remain in Git history — the repository owner should rotate all exposed keys immediately.
+  - **Premium Tabbed Navigation Overhaul**: Removed the old `#status-filter` select element from the controls card. Injected a beautifully styled obsidian tabs layout (Strike Zone, Moonshot, Safety Net, and Dante's Inferno) with interactive glows and informational tooltips.
+  - **Job Hunt Strategy Dial**: Injected a 3-step slider control (Survival, Balanced, Aggressive Growth) that dynamically recalibrates threshold calculations in real-time.
+  - **Dante's Inferno Satire Crimson Theme**: Implemented body level `.inferno-mode` layout modifier, seamlessly transitioning backgrounds, borders, and glows from obsidian-indigo to deep hellish crimson gradients (`#2a0808` to `#0d0202`).
+  - **9 Circles Classifier Banishment Math**: Dismantled hard-drop discard gates. Toxic listings now persist in the local database but are dynamically routed into the **9 Circles of Corporate Hell** (Limbo, Lust, Gluttony, Greed, Anger, Heresy, Violence, Fraud, Treachery) with customized banner warnings and crackling animation flairs.
+  - **Probabilistic Risk/Reward Matrix**: Evaluates listings against user profiles using relative Delta-X (Skills Overlap Ratio) and Delta-Y (Trajectory Seniority Steps) coordinates, shifting classifications dynamically based on Strategy Dial rules.
+  - **Automated Resume Seniority Calibration**: Re-engineered `resume-parser.js` to parse uploaded PDF resumes for seniority levels (Director/VP/Founder = 4, Manager/Lead = 3, Senior = 2, Entry = 1) and salary floor anchors, saving the baseline directly into the local `user_profile` IndexedDB store.

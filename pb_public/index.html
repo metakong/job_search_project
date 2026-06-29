@@ -115,15 +115,18 @@
                         <label for="search-input">Search Target</label>
                         <input type="search" id="search-input" placeholder="Search by Title or Company…">
                     </div>
-                    <div>
-                        <label for="status-filter">Filter Status</label>
-                        <select id="status-filter">
-                            <option value="ALL">All Eligible Targets</option>
-                            <option value="Tier 1 / Top Match">Tier 1 / Top Match</option>
-                            <option value="Tier 2 / Strong Match">Tier 2 / Strong Match</option>
-                            <option value="Tier 3 / Moderate Match">Tier 3 / Moderate Match</option>
-                            <option value="Tier 4 / Low Match">Tier 4 / Low Match</option>
-                        </select>
+                    <div class="tabs-container-wrapper">
+                        <label>Target Risk/Reward Zones</label>
+                        <div class="tabs-group" id="tabs-group">
+                            <button class="tab-btn active" id="tab-strike" data-zone="strike" title="🎯 The Strike Zone: Average Risk/Reward matches aligned with seniority.">🎯 Strike Zone</button>
+                            <button class="tab-btn" id="tab-moonshot" data-zone="moonshot" title="🚀 The Moonshot Zone: High Risk/Reward growth matches.">🚀 Moonshot</button>
+                            <button class="tab-btn" id="tab-safety" data-zone="safety" title="🛡️ The Safety Net: Low Risk/Reward baseline security matches.">🛡️ Safety Net</button>
+                            <button class="tab-btn" id="tab-inferno" data-zone="inferno" title="🔥 Dante's Inferno: Toxic Waste listings mapped to the 9 Circles.">🔥 Inferno</button>
+                        </div>
+                    </div>
+                    <div class="strategy-dial-container">
+                        <label for="strategy-dial">JOB HUNT STRATEGY DIAL: <span id="strategy-label">Balanced (Standard)</span></label>
+                        <input type="range" id="strategy-dial" min="1" max="3" step="1" value="2" class="strategy-slider">
                     </div>
                     <div>
                         <label for="sort-select">Sort By</label>

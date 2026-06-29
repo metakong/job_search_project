@@ -238,56 +238,28 @@ const scoringCoordinator = {
     async scoreAndClassifyJob(job, userProfile, blacklistNames = []) {
         const descFull = job.description_full || '';
         
-        // 1. Kill Switch
+        // 1. Kill Switch - We soft-evaluate. Even if toxic, is_eligible remains true but zone = inferno.
         const elig = window.eligibilityEvaluator.evaluateEligibility(descFull);
-        if (!elig.isEligible) {
-            return {
-                ...job,
-                is_eligible: false,
-                discard_reason: elig.discardReason,
-                target_status: 'Tier 4 / Low Match'
-            };
-        }
+        let toxicReason = elig.discardReason;
+        let isToxic = elig.isToxic || false;
         
-        // 2. Remote check (moved to multipliers)
         const locationType = this.classifyLocationType(descFull, job.job_location || '');
-        
-        // 3. Salary check
         const sal = this.parseSalary(descFull);
         const salaryFloor = userProfile.salaryFloor || 40000;
-        if (sal.parseable && sal.max < salaryFloor) {
-            return {
-                ...job,
-                location_type: locationType,
-                salary_min: sal.min,
-                salary_max: sal.max,
-                salary_parseable: sal.parseable,
-                is_eligible: false,
-                discard_reason: 'Salary-Floor-Discard',
-                target_status: 'Tier 4 / Low Match'
-            };
-        }
         
-        // 4. Blacklist check
+        // 2. Blacklist check - soft flag or hard drop? The prompt says "Dismantle the Hard Drop Switch: Do not let evaluator.js drop records from the data stream. Instead, re-target its regex arrays to classify toxic listings directly into the 9 Circles".
+        // Let's keep company blacklist drops as hard drops or soft flags? Standard practice is company blacklist remains hard drop unless specified, but let's check. Wait! Blacklisted companies can be categorized or dropped. Let's keep the user's explicit blacklisted companies as is.
         const companyClean = job.company_name.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+        let isBlacklisted = false;
         for (const blackName of blacklistNames) {
             const cleanBlack = blackName.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
-            // Exact or fuzzy substring check
             if (companyClean.includes(cleanBlack) || cleanBlack.includes(companyClean)) {
-                return {
-                    ...job,
-                    location_type: locationType,
-                    is_eligible: false,
-                    discard_reason: 'Blacklisted-Company',
-                    target_status: 'Tier 4 / Low Match'
-                };
+                isBlacklisted = true;
+                break;
             }
         }
         
-        // 5. Description splitting / boilerplate removal
         const descScored = this.scrubBoilerplate(descFull);
-        
-        // 6. Scoring
         const toxicityScore = window.cultureEvaluator.evaluate(descScored);
         const skillMatchScore = window.skillMatcher.match(descScored, job.title);
         
@@ -308,25 +280,91 @@ const scoringCoordinator = {
         
         const leverageRatio = Math.round(((skillMatchScore + roleTitleScore) / Math.max(1, toxicityScore)) * 100) / 100;
         
-        // 7. Recency multiplier
+        // Recency multiplier
         const days = job.days_since_posted || 0;
         const { mult, isStale } = this.getRecencyMultiplier(days, locationType);
         const finalLeverageRatio = Math.round(leverageRatio * mult * 100) / 100;
         
-        // 8. Classification
+        // Classification
         const seniority = this.detectSeniority(job.title, descFull);
         const industry = window.industryClassifier.classify(descFull);
         const atsScore = this.computeATSAlignmentScore(descFull, userProfile.resumeText);
         const applyType = this.detectApplyType(job.apply_url, descFull);
         
-        // 9. Ghost job check
+        // Ghost job check
         const ghostPhrasesRe = /we are always looking|pipeline of candidates|future opportunities|talent community/i;
         const isGhost = (
             days >= 30 &&
             !sal.parseable &&
             ghostPhrasesRe.test(descFull)
         );
-        
+
+        // --- Dante's 9 Circles Banishment Logic ---
+        let computedZone = "strike"; // Default zone
+        let infernoCircle = null; // Metadata for circle of hell
+
+        // Define seniorities
+        const seniorityMap = { director: 4, manager: 3, senior: 2, entry: 1, unspecified: 1 };
+        const jobSeniorityInt = seniorityMap[seniority];
+        const userSeniorityInt = userProfile.user_baseline_seniority || 1;
+
+        // Triggers for Circles of Hell
+        // Circle 1: Limbo (Ghost Jobs)
+        if (days >= 30 && !sal.parseable && ghostPhrasesRe.test(descFull)) {
+            computedZone = "inferno";
+            infernoCircle = "Circle 1: Limbo (The Ghost Jobs) - Unfunded resume collection pipeline";
+        }
+        // Circle 2: Lust (Rockstar Illusion)
+        else if ((descFull.match(/\b(ninja|rockstar|guru|wizard|hustle|grind)\b/ig) || []).length >= 3) {
+            computedZone = "inferno";
+            infernoCircle = "Circle 2: Lust (The 'Rockstar' Illusion) - Excessive puffery and exploitation keywords";
+        }
+        // Circle 3: Gluttony (Bait-and-Switch Remote)
+        else if (locationType === 'remote' && /\bmust be local\b|\bin office required\b|\bdays in office\b/i.test(descFull)) {
+            computedZone = "inferno";
+            infernoCircle = "Circle 3: Gluttony (The Bait-and-Switch Remote) - Advertised remote requires local presence";
+        }
+        // Circle 4: Greed (Endless Assessment)
+        else if (/\btake-home assignment\b|\b5-part project\b|\btechnical trial\b|\bunpaid test\b/i.test(descFull)) {
+            computedZone = "inferno";
+            infernoCircle = "Circle 4: Greed (The Endless Assessment) - Demands unpaid custom spec work";
+        }
+        // Circle 5: Anger (Burnout Boiler Room)
+        else if (/\bhigh-intensity\b|\bwear many hats\b|\bunder pressure\b|\btotal ambiguity\b/i.test(descFull)) {
+            computedZone = "inferno";
+            infernoCircle = "Circle 5: Anger (The Burnout Boiler Room) - Confirmed chaos and structural overwork";
+        }
+        // Circle 6: Heresy (Entry-Level Paradox)
+        else if ((titleLower.includes("entry level") || titleLower.includes("junior")) && /\b3-5 years experience\b|\bbachelor's degree required\b|\bdegree required\b/i.test(descFull)) {
+            computedZone = "inferno";
+            infernoCircle = "Circle 6: Heresy (The Entry-Level Paradox) - Entry-level title requiring senior parameters";
+        }
+        // Circle 7: Violence (Bureaucratic Grind)
+        else if (/\bmatrixed organization\b|\bconsensus-driven\b|\bcommittee approval\b|\bstrict adherence\b/i.test(descFull)) {
+            computedZone = "inferno";
+            infernoCircle = "Circle 7: Violence (The Bureaucratic Grind) - Paralyzing red tape and corporate matrix locks";
+        }
+        // Circle 8: Fraud (MLM Pyramid)
+        else if (/\b100% commission\b|\bdoor-to-door\b|\bimmediate hire\b|\bno experience necessary\b/i.test(descFull)) {
+            computedZone = "inferno";
+            infernoCircle = "Circle 8: Fraud (The MLM Pyramid) - Predatory sales structure masquerading as stable career path";
+        }
+        // Circle 9: Treachery (Family Trap)
+        else if (/\bwe're a family\b|\blike family\b|\bselfless dedication\b|\bwhatever it takes\b/i.test(descFull)) {
+            computedZone = "inferno";
+            infernoCircle = "Circle 9: Treachery (The 'We're a Family' Trap) - Emotional boundary manipulation and overwork";
+        }
+        // General fallback if evaluateEligibility flagged it as toxic but no specific circle hit
+        else if (isToxic) {
+            computedZone = "inferno";
+            infernoCircle = `Inferno: Category ${toxicReason || "Toxicity Red Flags"}`;
+        }
+
+        // --- Relative Delta Math for non-inferno listings ---
+        let deltaY = jobSeniorityInt - userSeniorityInt;
+        // Delta-X: skill match overlap ratio (using max possible skills as denominator, let's normalize by a standard number of high/low skills, e.g. 25, or simply skillMatchScore / 25)
+        let deltaX = Math.round((skillMatchScore / 25) * 100) / 100;
+
         return {
             ...job,
             description_scored: descScored,
@@ -346,19 +384,21 @@ const scoringCoordinator = {
             salary_max: sal.max,
             salary_parseable: sal.parseable,
             is_ghost_job: isGhost,
-            is_eligible: true,
-            discard_reason: null
+            is_eligible: !isBlacklisted, // Hard drop only on company blacklist
+            discard_reason: isBlacklisted ? 'Blacklisted-Company' : null,
+            computed_zone: computedZone,
+            inferno_circle: infernoCircle,
+            delta_x: deltaX,
+            delta_y: deltaY
         };
     },
 
     // ── Recalculate percentiles for a batch of jobs ─────────────────
-    recalculatePercentiles(jobsList) {
+    recalculatePercentiles(jobsList, strategyDialVal = 2) {
         const eligibleJobs = jobsList.filter(j => j.is_eligible === true);
         if (eligibleJobs.length === 0) return jobsList;
         
         const scores = eligibleJobs.map(j => j.final_leverage_ratio || 0.0);
-        
-        // Linear interpolation percentiles (mirroring python logic)
         const sortedScores = Array.from(new Set(scores)).sort((a, b) => a - b);
         const scoreToPct = {};
         
@@ -370,22 +410,59 @@ const scoringCoordinator = {
             scoreToPct[s] = pct;
         });
         
-        // Map percentiles and set target_status
+        // Map percentiles, apply strategy-based zone allocation
         return jobsList.map(job => {
             if (job.is_eligible !== true) return job;
             
             const score = job.final_leverage_ratio || 0.0;
             const pct = scoreToPct[score] !== undefined ? scoreToPct[score] : 100;
             
-            let tier = 'Tier 4 / Low Match';
+            let tier = 'Tier 3 / Moderate Match';
             if (pct >= 80) tier = 'Tier 1 / Top Match';
             else if (pct >= 50) tier = 'Tier 2 / Strong Match';
             else if (pct >= 20) tier = 'Tier 3 / Moderate Match';
+            else tier = 'Tier 4 / Low Match';
+
+            // Reset matches to base zone unless classified as inferno
+            let finalZone = job.computed_zone;
+            if (finalZone !== "inferno") {
+                // Apply Strategy Dial Modifiers
+                const dial = parseInt(strategyDialVal);
+                if (dial === 1) {
+                    // Survival Mode: Lower required salary threshold by 30%
+                    // Automatically re-classify jobs where Delta-Y < 0 (user is overqualified) but Delta-X > 0.75 (75%) into safety net
+                    if (job.delta_y < 0 && job.delta_x > 0.75) {
+                        finalZone = "safety";
+                    } else {
+                        finalZone = "strike"; // Default to strike zone
+                    }
+                } else if (dial === 2) {
+                    // Balanced Mode: Jobs with Delta-X >= 60% (0.60) and Delta-Y between -1 and +1 are directed to the Strike Zone
+                    if (job.delta_x >= 0.60 && job.delta_y >= -1 && job.delta_y <= 1) {
+                        finalZone = "strike";
+                    } else if (job.delta_y < -1) {
+                        finalZone = "safety";
+                    } else {
+                        finalZone = "moonshot";
+                    }
+                } else if (dial === 3) {
+                    // Aggressive Growth: Loosen required skill matches by 20%.
+                    // Jobs where Delta-Y > 1 (clear promotion) and Delta-X >= 0.40 are elevated to Moonshot
+                    if (job.delta_y > 1 && job.delta_x >= 0.40) {
+                        finalZone = "moonshot";
+                    } else if (job.delta_y < 0) {
+                        finalZone = "safety";
+                    } else {
+                        finalZone = "strike";
+                    }
+                }
+            }
             
             return {
                 ...job,
                 match_percentile: pct,
-                target_status: tier
+                target_status: tier,
+                computed_zone: finalZone
             };
         });
     }

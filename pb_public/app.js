@@ -11,6 +11,7 @@ let blacklistData     = [];
 let fuseBlacklist     = null;
 let currentModalJobId = null;
 let currentActiveDescription = "";
+let currentActiveZone = "strike"; // Default zone
 
 // ── DOM References ────────────────────────────────────────────────────
 const loader            = document.getElementById('loader');
@@ -18,7 +19,9 @@ const noResults         = document.getElementById('no-results');
 const jobsGrid          = document.getElementById('jobs-grid');
 const loadMoreBtn       = document.getElementById('load-more-btn');
 const searchInput       = document.getElementById('search-input');
-const statusFilter      = document.getElementById('status-filter');
+const tabsGroup         = document.getElementById('tabs-group');
+const strategyDial      = document.getElementById('strategy-dial');
+const strategyLabel     = document.getElementById('strategy-label');
 const sortSelect        = document.getElementById('sort-select');
 const appStatusFilter   = document.getElementById('app-status-filter');
 const locationFilter    = document.getElementById('location-filter');
@@ -222,7 +225,7 @@ async function runIngestionSweep() {
         }
 
         // ── 5. Recalculate percentiles for eligible jobs ──
-        const finalJobs = window.scoringCoordinator.recalculatePercentiles(processedJobs);
+        const finalJobs = window.scoringCoordinator.recalculatePercentiles(processedJobs, strategyDial ? strategyDial.value : 2);
 
         // ── 6. Save directly to IndexedDB ──
         loader.querySelector('span').textContent = 'Saving pipeline results to local database...';
@@ -268,10 +271,17 @@ async function fetchData(page = 1, append = false) {
         noResults.style.display = 'none';
         loadMoreBtn.style.display = 'none';
 
+        // Toggle .inferno-mode on body wrapper based on active zone
+        const workspace = document.querySelector('main.container') || document.body;
+        if (currentActiveZone === 'inferno') {
+            workspace.classList.add('inferno-mode');
+        } else {
+            workspace.classList.remove('inferno-mode');
+        }
+
         // Gather current filter state
         const filters = {
             search: searchInput.value,
-            status: statusFilter.value,
             sort:   sortSelect.value,
             appStatus: appStatusFilter.value,
             location: locationFilter.value,
@@ -285,7 +295,10 @@ async function fetchData(page = 1, append = false) {
         // Query database adapter (Dexie)
         const resultList = await window.dbAdapter.getJobs(filters, page, 50);
 
-        const newListings = resultList.items.map(r => ({
+        // Run client-side zone/percentile/strategy allocation on database results dynamically
+        const processedItems = window.scoringCoordinator.recalculatePercentiles(resultList.items, strategyDial ? strategyDial.value : 2);
+
+        const newListings = processedItems.map(r => ({
             id:                 r.id,
             title:              r.title || 'Unknown Title',
             company:            r.company_name || 'Unknown Company',
@@ -312,21 +325,28 @@ async function fetchData(page = 1, append = false) {
             is_stale:           r.is_stale           || false,
             ats_alignment_score: r.ats_alignment_score ?? 0,
             source_platform:    r.source_platform    || '',
+            computed_zone:      r.computed_zone      || 'strike',
+            inferno_circle:     r.inferno_circle     || null,
+            delta_x:            r.delta_x            ?? 0,
+            delta_y:            r.delta_y            ?? 0
         }));
+
+        // Filter only matches in current active tab zone
+        let zoneMatched = newListings.filter(j => j.computed_zone === currentActiveZone);
 
         // Client-side blacklist fuzzy filter
         const filtered = fuseBlacklist && blacklistData.length > 0
-            ? newListings.filter(j => {
+            ? zoneMatched.filter(j => {
                 const results = fuseBlacklist.search(j.company);
                 return results.length === 0;
             })
-            : newListings;
+            : zoneMatched;
 
         jobListings = append ? [...jobListings, ...filtered] : filtered;
         currentPage = page;
         hasMore     = resultList.page < resultList.totalPages;
 
-        calculateStats(resultList.totalItems);
+        calculateStats(jobListings.length); // Use current displayed count
         renderCards();
 
         if (hasMore) loadMoreBtn.style.display = 'inline-block';
@@ -367,9 +387,11 @@ function renderCards() {
 
     jobListings.forEach(job => {
         const card = document.createElement('div');
-        card.className = `job-card ${getTierCardClass(job.target_status)} ${job.is_stale ? 'card-stale' : ''}`;
+        const isInferno = job.computed_zone === 'inferno';
+        card.className = `job-card ${getTierCardClass(job.target_status)} ${job.is_stale ? 'card-stale' : ''} ${isInferno ? 'inferno-card' : ''}`;
 
         card.innerHTML = `
+            ${isInferno && job.inferno_circle ? `<div class="inferno-banner">🔥 ${escapeHtml(job.inferno_circle)}</div>` : ''}
             <div class="job-card-header">
                 <div class="job-card-title-row">
                     <h4 class="job-card-title">${escapeHtml(job.title)}</h4>
@@ -385,19 +407,25 @@ function renderCards() {
             </div>
             <div class="job-card-body">
                 <div class="job-metrics-row">
-                    <div class="metric-item">
+                    <div class="metric-item" title="Technical Skill match overlap score">
                         <div class="metric-val" style="color:var(--color-standard)">${job.skill_match_score}</div>
                         <div class="metric-lbl">Skills</div>
                     </div>
-                    <div class="metric-item">
+                    <div class="metric-item" title="Culture mismatch toxicity index">
                         <div class="metric-val" style="color:${job.toxicity_score > 1 ? 'var(--color-tier4)' : 'var(--text-primary)'}">${job.toxicity_score}</div>
                         <div class="metric-lbl">Toxicity</div>
                     </div>
-                    <div class="metric-item">
+                    <div class="metric-item" title="Scored leverage coefficient">
                         <div class="metric-val" style="color:${job.final_leverage_ratio >= 3 ? 'var(--color-tier1)' : 'var(--text-secondary)'}">${(job.final_leverage_ratio || 0).toFixed(2)}</div>
                         <div class="metric-lbl">Leverage</div>
                     </div>
                 </div>
+                ${!isInferno ? `
+                <div style="font-size:0.72rem; color:var(--text-muted); margin-top:0.5rem; border-top:1px solid var(--border-color); padding-top:0.35rem; display:flex; justify-content:space-between;">
+                    <span>Delta-X (Skills Ratio): <strong>${(job.delta_x || 0).toFixed(2)}</strong></span>
+                    <span>Delta-Y (Seniority Steps): <strong>${job.delta_y >= 0 ? '+' : ''}${job.delta_y}</strong></span>
+                </div>
+                ` : ''}
             </div>
             <div class="job-card-footer">
                 <button class="view-btn" data-id="${job.id}">Details</button>
@@ -693,7 +721,6 @@ async function exportCsv() {
 function getFilterState() {
     return {
         search: searchInput.value,
-        status: statusFilter.value,
         sort:   sortSelect.value,
         appStatus: appStatusFilter.value,
         location: locationFilter.value,
@@ -708,7 +735,6 @@ function getFilterState() {
 function applyFilterState(state) {
     if (!state) return;
     searchInput.value  = state.search  || '';
-    statusFilter.value = state.status  || 'ALL';
     sortSelect.value   = state.sort    || '-final_leverage_ratio';
     appStatusFilter.value = state.appStatus || 'ALL';
     locationFilter.value  = state.location  || 'ALL';
@@ -830,7 +856,32 @@ function setupEventListeners() {
         debounce = setTimeout(() => fetchData(1, false), 300);
     });
 
-    statusFilter.addEventListener('change',    () => fetchData(1, false));
+    // Strategy Dial slider
+    if (strategyDial) {
+        strategyDial.addEventListener('input', (e) => {
+            const val = parseInt(e.target.value);
+            const labels = {
+                1: "Survival Mode (Desperate)",
+                2: "Balanced (Standard)",
+                3: "Aggressive Growth (Confident)"
+            };
+            if (strategyLabel) strategyLabel.textContent = labels[val] || "Balanced";
+            fetchData(1, false);
+        });
+    }
+
+    // Tabs group navigation
+    if (tabsGroup) {
+        tabsGroup.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                tabsGroup.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentActiveZone = btn.dataset.zone || 'strike';
+                fetchData(1, false);
+            });
+        });
+    }
+
     sortSelect.addEventListener('change',      () => fetchData(1, false));
     appStatusFilter.addEventListener('change', () => fetchData(1, false));
     locationFilter.addEventListener('change',  () => fetchData(1, false));

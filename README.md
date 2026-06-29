@@ -24,13 +24,14 @@ It scrapes job boards (Indeed RSS, Remotive API, ATS direct feeds), scores every
 |---|---|
 | **Zero Setup** | No Python, no Node.js, no databases. Open in browser → follow wizard → done. |
 | **Offline-Capable PWA** | Install as a desktop/mobile app. Works offline after first load. |
-| **Smart Scoring Engine** | Multi-signal scoring: skill matching, toxicity detection, salary parsing, seniority classification, ATS alignment. |
-| **Kill Switch Filters** | Auto-removes MLM/predatory, clinical, trades, and hard-disqualifier listings (degree mandates, travel, gov't clearance). |
+| **Probabilistic Labor Matrix** | Real-time risk/reward zone classification (Strike Zone, Moonshot, Safety Net, Dante's Inferno) using relative Delta-X/Y vector math. |
+| **Job Hunt Strategy Dial** | 3-step slider control (Survival, Balanced, Aggressive Growth) that dynamically recalibrates threshold calculations in real-time. |
+| **Dante's Inferno Satire Crimson Theme** | Seamless transition of backgrounds, borders, and glows to a deep crimson theme when viewing toxic listings. |
+| **9 Circles Classifier** | Toxic listings are parsed and banish-mapped to the 9 Circles of Hell (Limbo, Lust, Gluttony, Greed, Anger, Heresy, Violence, Fraud, Treachery) with Warning Banners. |
 | **Ghost Job Detection** | Flags stale, vague, salary-free listings likely posted to farm resumes. |
-| **Resume ATS Scoring** | Upload your PDF resume. The app extracts keywords and scores each listing's alignment — entirely client-side. |
+| **Resume ATS Scoring** | Upload your PDF resume. The app extracts keywords and scores alignment, calibrating seniority levels (1-4) and salary floor baselines. |
 | **Company Blacklist** | One-click blacklist with fuzzy matching (Fuse.js). Never see that company again. |
 | **Data Portability** | Full JSON export/import of your database. Your data stays yours. 30-day backup reminders included. |
-| **BYOK AI (Optional)** | Bring your own Groq, Gemini, or Cerebras API keys for AI-powered deep analysis. Completely optional. |
 
 ---
 

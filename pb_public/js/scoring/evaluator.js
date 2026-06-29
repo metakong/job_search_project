@@ -92,11 +92,11 @@ const eligibilityEvaluator = {
             if (pattern.test(text)) {
                 let displayCategory = category;
                 if (category === 'Trades/Labor_Complex') displayCategory = 'Trades/Labor';
-                return { isEligible: false, discardReason: displayCategory };
+                return { isEligible: true, isToxic: true, discardReason: displayCategory };
             }
         }
 
-        return { isEligible: true, discardReason: null };
+        return { isEligible: true, isToxic: false, discardReason: null };
     }
 };
 
