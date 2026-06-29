@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Linguistic Signal & Technical Leverage Dashboard</title>
+    <meta name="description" content="Real-time job intelligence dashboard for Systems Architecture and Sales Operations roles in Springfield, MO. Filter, score, and track job applications.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Pico.css base -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="style.css">
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="manifest.json">
+    <!-- Dexie.js for IndexedDB -->
+    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+    <!-- PDF.js for client-side resume parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <!-- Fuse.js for client-side fuzzy blacklist matching -->
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+    <!-- Marked.js for markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- Database and Config -->
+    <script src="js/storage/local-db.js"></script>
+    <script src="js/storage/db-adapter.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/utils/fetch.js"></script>
+    <script src="js/storage/data-portability.js"></script>
+    
+    <!-- Extractors -->
+    <script src="js/extractors/rss-adapter.js"></script>
+    <script src="js/extractors/remotive-api.js"></script>
+    <script src="js/extractors/sitemap-parser.js"></script>
+    
+    <!-- AI & Parsing -->
+    <script src="js/ai/byok-router.js"></script>
+    <script src="js/ai/resume-parser.js"></script>
+    <script src="js/ai/transformers-engine.js"></script>
+    
+    <!-- Scoring -->
+    <script src="js/scoring/evaluator.js"></script>
+    <script src="js/scoring/skill-matcher.js"></script>
+    <script src="js/scoring/culture-evaluator.js"></script>
+    <script src="js/scoring/industry-classifier.js"></script>
+    <script src="js/scoring/scoring-coordinator.js"></script>
+    
+    <!-- Features -->
+    <script src="js/features/setup-wizard.js"></script>
+</head>
+<body>
+    <header class="container">
+        <div class="header-content">
+            <div>
+                <h1>Linguistic Signal <span class="amp">&amp;</span> Technical Leverage</h1>
+                <p class="subtitle">Systems Architecture Target Acquisition Dashboard</p>
+            </div>
+            <div class="header-actions">
+                <button id="ingest-sweep-btn" class="primary" title="Trigger direct browser-based scraping sweep" style="margin-right: 0.5rem; display: inline-flex; align-items: center; gap: 0.25rem;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                    Ingest Sweep
+                </button>
+                <button id="export-csv-btn" class="btn-secondary-action" title="Export current view to CSV">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Export CSV
+                </button>
+                <button id="settings-toggle-btn" class="btn-secondary-action" title="Blacklist management">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M16.95 16.95l1.41 1.41M4.93 4.93l1.41 1.41M7.05 16.95l-1.41 1.41M20 12h-2M6 12H4M12 20v-2M12 6V4"/></svg>
+                    Settings
+                </button>
+                <div class="header-badge">
+                    <span class="pulse-indicator" id="connection-indicator"></span>
+                    <span id="connection-status-text">Connecting…</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Stats Panel -->
+        <section id="stats-section">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total-jobs">0</div>
+                    <div class="stat-label">Eligible Jobs Scored</div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem;">
+                        <span class="stat-sub">Raw Ingested: <span id="stat-raw-ingested">0</span></span>
+                        <span class="stat-sub">Discarded/Deduped: <span id="stat-discarded">0</span></span>
+                    </div>
+                </div>
+                <div class="stat-card tier1">
+                    <div class="stat-value" id="stat-tier1">0</div>
+                    <div class="stat-label">Tier 1 Top Matches</div>
+                </div>
+                <div class="stat-card tier2">
+                    <div class="stat-value" id="stat-tier2">0</div>
+                    <div class="stat-label">Tier 2 Strong Matches</div>
+                </div>
+                <div class="stat-card avg-leverage">
+                    <div class="stat-value" id="stat-avg-leverage">0.0</div>
+                    <div class="stat-label">Avg Leverage Ratio</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Filters & Controls -->
+        <section id="controls-section">
+            <div class="controls-card">
+                <!-- Row 1: Search + Status + Sort -->
+                <div class="grid controls-row-1">
+                    <div>
+                        <label for="search-input">Search Target</label>
+                        <input type="search" id="search-input" placeholder="Search by Title or Company…">
+                    </div>
+                    <div>
+                        <label for="status-filter">Filter Status</label>
+                        <select id="status-filter">
+                            <option value="ALL">All Eligible Targets</option>
+                            <option value="Tier 1 / Top Match">Tier 1 / Top Match</option>
+                            <option value="Tier 2 / Strong Match">Tier 2 / Strong Match</option>
+                            <option value="Tier 3 / Moderate Match">Tier 3 / Moderate Match</option>
+                            <option value="Tier 4 / Low Match">Tier 4 / Low Match</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="sort-select">Sort By</label>
+                        <select id="sort-select">
+                            <option value="-final_leverage_ratio">Final Leverage (High → Low)</option>
+                            <option value="-match_percentile">Match Percentile (High → Low)</option>
+                            <option value="-skill_match_score">Skills Overlap (High → Low)</option>
+                            <option value="toxicity_score">Toxicity (Low → High)</option>
+                            <option value="-ats_alignment_score">ATS Alignment (High → Low)</option>
+                            <option value="-days_since_posted">Newest First</option>
+                        </select>
+                    </div>
+                </div>
+                <!-- Row 2: App status + Location + Recency toggle -->
+                <div class="controls-row-2">
+                    <div class="control-group">
+                        <label>Application Status</label>
+                        <select id="app-status-filter">
+                            <option value="ALL">All Statuses</option>
+                            <option value="unseen">Unseen</option>
+                            <option value="bookmarked">Bookmarked</option>
+                            <option value="applied">Applied</option>
+                            <option value="interviewing">Interviewing</option>
+                            <option value="offered">Offered</option>
+                            <option value="rejected">Rejected</option>
+                            <option value="passed">Passed</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>Location Type</label>
+                        <select id="location-filter">
+                            <option value="ALL">All Locations</option>
+                            <option value="on_site">On-Site</option>
+                            <option value="hybrid">Hybrid</option>
+                            <option value="remote">Remote (≤14d)</option>
+                            <option value="unknown">Unknown</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label>Recency Window</label>
+                        <div class="recency-toggle" id="recency-toggle">
+                            <button class="recency-btn" data-days="7">7d</button>
+                            <button class="recency-btn active" data-days="14">14d</button>
+                            <button class="recency-btn" data-days="21">21d</button>
+                            <button class="recency-btn" data-days="30">30d</button>
+                            <button class="recency-btn" data-days="9999">All</button>
+                        </div>
+                    </div>
+                </div>
+                <!-- Row 3: Industry + Salary + Ghost Jobs -->
+                <div class="grid controls-row-1" style="margin-top: 1rem;">
+                    <div>
+                        <label for="industry-filter">Industry</label>
+                        <select id="industry-filter">
+                            <option value="ALL">All Industries</option>
+                            <option value="saas_tech">SaaS / Tech</option>
+                            <option value="telecom">Telecom</option>
+                            <option value="logistics_supply_chain">Logistics / Supply Chain</option>
+                            <option value="finance_fintech">Finance / Fintech</option>
+                            <option value="real_estate">Real Estate</option>
+                            <option value="healthcare_tech">Healthcare Tech</option>
+                            <option value="manufacturing">Manufacturing</option>
+                            <option value="retail_e_commerce">Retail / E-Commerce</option>
+                            <option value="staffing_hr">Staffing / HR</option>
+                            <option value="ai_tech">AI / Tech</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label>Salary Range</label>
+                        <div style="display:flex; gap:0.5rem;">
+                            <input type="number" id="salary-min" placeholder="Min Salary ($)" style="width: 50%;">
+                            <input type="number" id="salary-max" placeholder="Max Salary ($)" style="width: 50%;">
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: flex-end; padding-bottom: 0.5rem;">
+                        <label>
+                            <input type="checkbox" id="hide-ghost-jobs" checked>
+                            Hide Ghost Jobs
+                        </label>
+                    </div>
+                </div>
+                <!-- Row Actions -->
+                <div class="controls-row-2" style="margin-top: 1rem;">
+                    <div class="controls-row-actions" style="margin-left: auto;">
+                        <button id="save-filter-btn" class="btn-secondary-action">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+                            Save Filter
+                        </button>
+                        <select id="profile-select" title="Load saved filter profile">
+                            <option value="">Load Profile…</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Blacklist Management Panel (Item 19) -->
+        <section id="blacklist-panel" class="blacklist-panel" style="display:none;">
+            <div class="blacklist-inner">
+                <h3 class="panel-title">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                    Blacklisted Companies
+                </h3>
+                <div class="blacklist-add-row">
+                    <input type="text" id="blacklist-input" placeholder="Company name to blacklist…">
+                    <input type="text" id="blacklist-reason" placeholder="Reason (optional)">
+                    <button id="blacklist-add-btn" class="btn-secondary-action">Add</button>
+                </div>
+                <div id="blacklist-list" class="blacklist-list">
+                    <!-- Populated by JS -->
+                </div>
+                <div class="portability-section" style="margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
+                    <h3 class="panel-title">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                        PWA settings & backups
+                    </h3>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem;">
+                        <button id="wizard-reopen-btn" class="btn-secondary-action" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">Edit Setup Parameters</button>
+                        <button id="export-db-btn" class="btn-secondary-action" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">Export JSON Backup</button>
+                        <button id="import-db-trigger-btn" class="btn-secondary-action" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">Import JSON Backup</button>
+                        <input type="file" id="import-db-file" accept=".json" style="display: none;">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Jobs Grid -->
+        <section id="jobs-section">
+            <div class="loader" id="loader">
+                <div class="loader-ring"></div>
+                <span>Querying Signal Nodes…</span>
+            </div>
+            <div class="no-results" id="no-results" style="display: none;">
+                <div class="no-results-icon">◎</div>
+                <h3>No Targets Acquired</h3>
+                <p>No job listings match your current filter criteria.</p>
+            </div>
+            <div class="jobs-grid" id="jobs-grid">
+                <!-- Cards injected by JS -->
+            </div>
+            <div style="text-align: center; margin-top: 2rem;">
+                <button id="load-more-btn" class="btn-load-more" style="display: none;">Load More Targets</button>
+            </div>
+        </section>
+    </main>
+
+    <!-- Details Modal -->
+    <dialog id="details-modal">
+        <article class="modal-card">
+            <header>
+                <button aria-label="Close" rel="prev" id="close-modal-btn" class="close-btn"></button>
+                <h3 id="modal-job-title">Job Title</h3>
+                <p id="modal-job-company" class="modal-company">Company Name</p>
+                <div class="modal-meta-badges">
+                    <span id="modal-status-badge" class="badge">Status</span>
+                    <span class="meta-item">Skills: <strong id="modal-skills-count">0</strong></span>
+                    <span class="meta-item">Toxicity: <strong id="modal-toxicity-score">0</strong></span>
+                    <span class="meta-item">Leverage: <strong id="modal-leverage-ratio">0.0</strong></span>
+                    <span class="meta-item">ATS Align: <strong id="modal-ats-score">0</strong>%</span>
+                </div>
+                <div class="modal-meta-badges" style="margin-top: 0.5rem;">
+                    <span class="meta-item">Salary: <strong id="modal-salary">Undisclosed</strong></span>
+                    <span class="meta-item">Industry: <strong id="modal-industry">Unknown</strong></span>
+                    <span class="meta-item">Seniority: <strong id="modal-seniority">Unknown</strong></span>
+                    <span class="meta-item">Location: <strong id="modal-location">Unknown</strong></span>
+                    <span class="meta-item">Apply Type: <strong id="modal-apply-type">Unknown</strong></span>
+                    <span class="meta-item">Percentile: <strong id="modal-percentile">Unknown</strong></span>
+                    <span class="meta-item">Title Bonus: <strong id="modal-title-score">0</strong></span>
+                    <span class="meta-item">Posted: <strong id="modal-posted-date">Unknown</strong> (<span id="modal-days-since"></span>)</span>
+                    <span class="meta-item">Source: <strong id="modal-source-platform">Unknown</strong></span>
+                </div>
+            </header>
+            <div class="modal-body">
+                <div class="modal-scroll-area" id="modal-description-content" style="padding: 1rem; background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--border-color);">
+                    Description Content
+                </div>
+            </div>
+            <footer>
+                <div class="modal-footer-left">
+                    <label class="modal-status-label">App Status:</label>
+                    <select id="modal-app-status-select">
+                        <option value="unseen">Unseen</option>
+                        <option value="bookmarked">Bookmarked</option>
+                        <option value="applied">Applied</option>
+                        <option value="interviewing">Interviewing</option>
+                        <option value="offered">Offered</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="passed">Passed</option>
+                    </select>
+                    <button id="modal-save-status-btn" class="btn-secondary-action">Save</button>
+                </div>
+                <div class="modal-footer-right" style="display: flex; gap: 0.5rem;">
+                    <button class="primary" id="modal-apply-btn" onclick="window.open(this.dataset.url, '_blank')" style="display: none;">
+                        Apply Now ↗
+                    </button>
+                    <button class="secondary" id="modal-copy-btn">
+                        <svg class="copy-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        <span id="copy-btn-text">Copy to Clipboard</span>
+                    </button>
+                </div>
+            </footer>
+        </article>
+    </dialog>
+
+    <footer class="main-footer container">
+        <p>Linguistic Signal &amp; Skill-Intersection Pipeline &copy; 2026. Optimized for ARM64 server cores.</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>

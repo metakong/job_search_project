@@ -1,0 +1,27 @@
+# Ignore virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Ignore PocketBase local data directory (IndexedDB is used for public PWA)
+pb_data/
+
+# Ignore local JIT / system generated log and backup files
+*.log
+*.tmp
+*.bak
+*.json.bak
+cleansing_stats.json
+sweep_log.json
+jit_scraper.log
+pip_*.log
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS generated files
+.DS_Store
+Thumbs.db
