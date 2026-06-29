@@ -50,13 +50,12 @@ const dbAdapter = {
             items = items.filter(item => item.is_eligible !== false);
 
             // 1b. Zone filter
-            if (filters.zone) {
-                items = items.filter(item => item.computed_zone === filters.zone);
-            }
-
-            // 2. Status filter
-            if (filters.status && filters.status !== 'ALL') {
-                items = items.filter(item => item.target_status === filters.status);
+            if (filters.zone && filters.zone !== 'all') {
+                items = items.filter(item => {
+                    // If the job lacks a computed_zone, treat it as a 'strike' default so it isn't invisible
+                    const jobZone = item.computed_zone || 'strike';
+                    return jobZone === filters.zone;
+                });
             }
 
             // 3. Application status filter

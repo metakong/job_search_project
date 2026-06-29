@@ -254,3 +254,11 @@ This file tracks all changes, architectural decisions, and feature implementatio
   - **Delta Math Repair**: Fixed the `NaN` cascade in `scoring-coordinator.js` by establishing bulletproof numeric seniority parsing and correctly normalizing `Delta-X` scaling out of 5 skills.
   - **Dynamic Categorization Matrix**: Unified the Strategy Dial logic (Survival, Balanced, Aggressive) natively into `scoreAndClassifyJob()` and `recalculatePercentiles()`, ensuring deterministic categorizations based on `Delta-X` and `Delta-Y`. Dante's 9 Circles banishment rules enforce a strict override.
   - **UI Logic Wiring**: Updated `app.js` and `db-adapter.js` to implement exact filtering based on the selected `currentZone`. Wired real-time IndexedDB persistence to the Strategy Dial event listener, automatically triggering background re-scores.
+
+### Phase 11.8: Fatal Crash Resolution & Data Migration
+- **Status**: Completed
+- **Changes**:
+  - **Scrubbed Ghost References**: Verified and removed any dangling references to the deleted `#status-filter` element across `app.js` and `db-adapter.js` to prevent fatal `TypeError` crashes on dashboard load.
+  - **Legacy Data Graceful Fallback**: Modified the `getJobs` query in `db-adapter.js` to handle older scraped jobs lacking a `computed_zone` property, safely defaulting them to `'strike'` so they remain visible in the UI rather than turning into invisible ghosts.
+  - **Bulletproofed Inferno Flag**: Hardened the Dante's Inferno override logic in `scoring-coordinator.js` to securely reference the evaluator payload without triggering `ReferenceError` crashes on undefined `eligibility` properties.
+  - **Console Verification**: Added verbose filter logging in `app.js` to prove `currentZone` state accurately passes down into the IndexedDB query logic.

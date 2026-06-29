@@ -293,6 +293,9 @@ async function fetchData(page = 1, append = false) {
             zone: currentActiveZone
         };
 
+        // Developer console verification
+        console.log('[App] Fetching jobs with filters:', filters);
+
         // Query database adapter (Dexie)
         const resultList = await window.dbAdapter.getJobs(filters, page, 50);
 

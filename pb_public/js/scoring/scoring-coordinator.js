@@ -361,7 +361,6 @@ const scoringCoordinator = {
         }
 
         // --- Relative Delta Math for non-inferno listings ---
-        const isInferno = (computedZone === 'inferno');
 
         // 1. Establish Numeric Seniority Values
         const senMap = { 'director': 4, 'manager': 3, 'senior': 2, 'entry': 1, 'unspecified': 2 };
@@ -390,8 +389,13 @@ const scoringCoordinator = {
             else computedZone = 'strike';
         }
         
-        // 4. Dante's Inferno Override (Must supersede all above logic)
-        if (isInferno) { computedZone = 'inferno'; }
+        // 4. Dante's Inferno Override
+        const eligibility = typeof elig !== 'undefined' ? elig : undefined;
+        const isInferno = job.computed_zone === 'inferno' || (typeof eligibility !== 'undefined' && eligibility.computed_zone === 'inferno');
+        if (isInferno) {
+            computedZone = 'inferno';
+            job.inferno_circle = eligibility?.inferno_circle || 'Circle 1: Limbo';
+        }
 
         return {
             ...job,
