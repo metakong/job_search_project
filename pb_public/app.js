@@ -311,6 +311,7 @@ async function fetchData(page = 1, append = false) {
             role_title_score:   r.role_title_score   ?? 0,
             leverage_ratio:     r.leverage_ratio      ?? 0,
             final_leverage_ratio: r.final_leverage_ratio ?? 0,
+            match_score:        r.match_score        ?? 0,
             match_percentile:   r.match_percentile   ?? 0,
             target_status:      r.target_status      || 'Pending',
             salary_min:         r.salary_min         || 0,
@@ -411,9 +412,9 @@ function renderCards() {
             </div>
             <div class="job-card-body">
                 <div class="job-metrics-row">
-                    <div class="metric-item" title="Technical Skill match overlap score">
-                        <div class="metric-val" style="color:var(--color-standard)">${job.skill_match_score}</div>
-                        <div class="metric-lbl">Skills</div>
+                    <div class="metric-item" title="Core Matrix Score (0-100)">
+                        <div class="metric-val" style="color:var(--color-standard)">${job.match_score}/100</div>
+                        <div class="metric-lbl">Core Score</div>
                     </div>
                     <div class="metric-item" title="Culture mismatch toxicity index">
                         <div class="metric-val" style="color:${job.toxicity_score > 1 ? 'var(--color-tier4)' : 'var(--text-primary)'}">${job.toxicity_score}</div>
@@ -739,7 +740,7 @@ function getFilterState() {
 function applyFilterState(state) {
     if (!state) return;
     searchInput.value  = state.search  || '';
-    sortSelect.value   = state.sort    || '-final_leverage_ratio';
+    sortSelect.value   = state.sort    || '-match_score';
     appStatusFilter.value = state.appStatus || 'ALL';
     locationFilter.value  = state.location  || 'ALL';
     setRecencyDays(state.recencyDays || 14);

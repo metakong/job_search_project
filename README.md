@@ -108,11 +108,11 @@ These queries are customizable via the Setup Wizard or by editing `js/config.js`
 ┌──────────────────────────────────────────────┐
 │          SCORING & CLASSIFICATION            │
 │  ──────────────────────────────────────────  │
-│  - Kill Switch Evaluator (evaluator.js)      │  ◄── Hard exclusion filters
+│  - Gate Evaluator (evaluator.js)             │  ◄── Logistical & Toxicity Vectors (9 Circles)
 │  - Culture Evaluator (culture-evaluator.js)  │  ◄── Toxicity red-flag detection
 │  - Skill Matcher (skill-matcher.js)          │  ◄── Set-based keyword overlap
 │  - Industry Classifier (industry-classifier) │  ◄── First-match-wins tagger
-│  - Scoring Coordinator (scoring-coordinator) │  ◄── Pipeline orchestrator
+│  - Scoring Coordinator (scoring-coordinator) │  ◄── Hexagonal Matrix & 36-State Routing
 │  - Resume Parser (resume-parser.js)          │  ◄── PDF.js client-side extraction
 └──────────────────────┬───────────────────────┘
                        │

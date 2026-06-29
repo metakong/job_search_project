@@ -238,18 +238,7 @@ const scoringCoordinator = {
     async scoreAndClassifyJob(job, userProfile, blacklistNames = []) {
         const descFull = job.description_full || '';
         
-        // 1. Kill Switch - We soft-evaluate. Even if toxic, is_eligible remains true but zone = inferno.
-        const elig = window.eligibilityEvaluator.evaluateEligibility(descFull);
-        let toxicReason = elig.discardReason;
-        let isToxic = elig.isToxic || false;
-        
-        const locationType = this.classifyLocationType(descFull, job.job_location || '');
-        const sal = this.parseSalary(descFull);
-        const salaryFloor = userProfile.salaryFloor || 40000;
-        
-        // 2. Blacklist check - soft flag or hard drop? The prompt says "Dismantle the Hard Drop Switch: Do not let evaluator.js drop records from the data stream. Instead, re-target its regex arrays to classify toxic listings directly into the 9 Circles".
-        // Let's keep company blacklist drops as hard drops or soft flags? Standard practice is company blacklist remains hard drop unless specified, but let's check. Wait! Blacklisted companies can be categorized or dropped. Let's keep the user's explicit blacklisted companies as is.
-        const companyClean = job.company_name.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
+        const companyClean = (job.company_name || '').toLowerCase().trim().replace(/[^a-z0-9]/g, '');
         let isBlacklisted = false;
         for (const blackName of blacklistNames) {
             const cleanBlack = blackName.toLowerCase().trim().replace(/[^a-z0-9]/g, '');
@@ -258,176 +247,99 @@ const scoringCoordinator = {
                 break;
             }
         }
+
+        job.location_type = this.classifyLocationType(descFull, job.job_location || '');
+        const sal = this.parseSalary(descFull);
+        job.salary_min = sal.min;
+        job.salary_max = sal.max;
+        job.salary_parseable = sal.parseable;
+        job.salary_mid = sal.parseable ? (sal.min + sal.max) / 2 : 0;
         
         const descScored = this.scrubBoilerplate(descFull);
-        const toxicityScore = window.cultureEvaluator.evaluate(descScored);
         const skillMatchScore = window.skillMatcher.match(descScored, job.title);
+        job.skill_match_score = skillMatchScore;
+        job.seniority_level = this.detectSeniority(job.title, descFull);
+        job.ats_alignment_score = this.computeATSAlignmentScore(descFull, userProfile.resumeText);
+        job.apply_type = this.detectApplyType(job.apply_url, descFull);
+        job.industry = window.industryClassifier.classify(descFull);
+        job.is_eligible = !isBlacklisted;
+        job.discard_reason = isBlacklisted ? 'Blacklisted-Company' : null;
         
-        // Role title score
-        let roleTitleScore = 0;
-        const titleLower = (job.title || '').toLowerCase();
-        const roleTerms = [
-            "director", "vp", "vice president", "account executive", "account manager", 
-            "business development", "sales operations", "revenue operations", 
-            "operations manager", "sales manager"
-        ];
-        for (const term of roleTerms) {
-            if (titleLower.includes(term)) {
-                roleTitleScore = 5;
-                break;
-            }
-        }
+        const strategy = parseInt(userProfile.strategyDial || 2);
+        let matrixState = ''; // Holds the exact 1-of-36 category
         
-        const leverageRatio = Math.round(((skillMatchScore + roleTitleScore) / Math.max(1, toxicityScore)) * 100) / 100;
-        
-        // Recency multiplier
-        const days = job.days_since_posted || 0;
-        const { mult, isStale } = this.getRecencyMultiplier(days, locationType);
-        const finalLeverageRatio = Math.round(leverageRatio * mult * 100) / 100;
-        
-        // Classification
-        const seniority = this.detectSeniority(job.title, descFull);
-        const industry = window.industryClassifier.classify(descFull);
-        const atsScore = this.computeATSAlignmentScore(descFull, userProfile.resumeText);
-        const applyType = this.detectApplyType(job.apply_url, descFull);
-        
-        // Ghost job check
-        const ghostPhrasesRe = /we are always looking|pipeline of candidates|future opportunities|talent community/i;
-        const isGhost = (
-            days >= 30 &&
-            !sal.parseable &&
-            ghostPhrasesRe.test(descFull)
-        );
+        // 1. GATES ($V_L$ and $V_T$)
+        const evalData = window.eligibilityEvaluator.evaluateJob(job, userProfile);
+        job.toxicity_score = evalData.toxicityScore;
 
-        // --- Dante's 9 Circles Banishment Logic ---
-        let computedZone = "strike"; // Default zone
-        let infernoCircle = null; // Metadata for circle of hell
-
-        // Define seniorities
-        const seniorityMap = { director: 4, manager: 3, senior: 2, entry: 1, unspecified: 1 };
-        const jobSeniorityInt = seniorityMap[seniority];
-        const userSeniorityInt = userProfile.user_baseline_seniority || 1;
-
-        // Triggers for Circles of Hell
-        // Circle 1: Limbo (Ghost Jobs)
-        if (days >= 30 && !sal.parseable && ghostPhrasesRe.test(descFull)) {
-            computedZone = "inferno";
-            infernoCircle = "Circle 1: Limbo (The Ghost Jobs) - Unfunded resume collection pipeline";
+        if (!evalData.passLogistics) {
+            job.computed_zone = 'noise';
+            job.matrix_state = `strategy_${strategy}_noise_logistics_failed`;
+            return job;
         }
-        // Circle 2: Lust (Rockstar Illusion)
-        else if ((descFull.match(/\b(ninja|rockstar|guru|wizard|hustle|grind)\b/ig) || []).length >= 3) {
-            computedZone = "inferno";
-            infernoCircle = "Circle 2: Lust (The 'Rockstar' Illusion) - Excessive puffery and exploitation keywords";
-        }
-        // Circle 3: Gluttony (Bait-and-Switch Remote)
-        else if (locationType === 'remote' && /\bmust be local\b|\bin office required\b|\bdays in office\b/i.test(descFull)) {
-            computedZone = "inferno";
-            infernoCircle = "Circle 3: Gluttony (The Bait-and-Switch Remote) - Advertised remote requires local presence";
-        }
-        // Circle 4: Greed (Endless Assessment)
-        else if (/\btake-home assignment\b|\b5-part project\b|\btechnical trial\b|\bunpaid test\b/i.test(descFull)) {
-            computedZone = "inferno";
-            infernoCircle = "Circle 4: Greed (The Endless Assessment) - Demands unpaid custom spec work";
-        }
-        // Circle 5: Anger (Burnout Boiler Room)
-        else if (/\bhigh-intensity\b|\bwear many hats\b|\bunder pressure\b|\btotal ambiguity\b/i.test(descFull)) {
-            computedZone = "inferno";
-            infernoCircle = "Circle 5: Anger (The Burnout Boiler Room) - Confirmed chaos and structural overwork";
-        }
-        // Circle 6: Heresy (Entry-Level Paradox)
-        else if ((titleLower.includes("entry level") || titleLower.includes("junior")) && /\b3-5 years experience\b|\bbachelor's degree required\b|\bdegree required\b/i.test(descFull)) {
-            computedZone = "inferno";
-            infernoCircle = "Circle 6: Heresy (The Entry-Level Paradox) - Entry-level title requiring senior parameters";
-        }
-        // Circle 7: Violence (Bureaucratic Grind)
-        else if (/\bmatrixed organization\b|\bconsensus-driven\b|\bcommittee approval\b|\bstrict adherence\b/i.test(descFull)) {
-            computedZone = "inferno";
-            infernoCircle = "Circle 7: Violence (The Bureaucratic Grind) - Paralyzing red tape and corporate matrix locks";
-        }
-        // Circle 8: Fraud (MLM Pyramid)
-        else if (/\b100% commission\b|\bdoor-to-door\b|\bimmediate hire\b|\bno experience necessary\b/i.test(descFull)) {
-            computedZone = "inferno";
-            infernoCircle = "Circle 8: Fraud (The MLM Pyramid) - Predatory sales structure masquerading as stable career path";
-        }
-        // Circle 9: Treachery (Family Trap)
-        else if (/\bwe're a family\b|\blike family\b|\bselfless dedication\b|\bwhatever it takes\b/i.test(descFull)) {
-            computedZone = "inferno";
-            infernoCircle = "Circle 9: Treachery (The 'We're a Family' Trap) - Emotional boundary manipulation and overwork";
-        }
-        // General fallback if evaluateEligibility flagged it as toxic but no specific circle hit
-        else if (isToxic) {
-            computedZone = "inferno";
-            infernoCircle = `Inferno: Category ${toxicReason || "Toxicity Red Flags"}`;
+        if (evalData.toxicityScore > 75) {
+            job.computed_zone = 'inferno';
+            job.inferno_circle = evalData.infernoCircle;
+            job.matrix_state = `strategy_${strategy}_inferno_circle_${evalData.infernoCircle.split(':')[0].replace(/ /g, '')}`;
+            return job;
         }
 
-        // --- Relative Delta Math for non-inferno listings ---
+        // 2. SEMANTIC VECTOR ($V_S$) [0 to 1 scale]
+        // Normalize keyword match, subtract penalty for missing hard constraints
+        let vS = Math.min(1.0, (skillMatchScore || 0) / 5.0);
+        if (vS < 0.15) { 
+            job.computed_zone = 'noise'; 
+            job.matrix_state = `strategy_${strategy}_noise_low_semantic`;
+            return job; 
+        }
 
-        // 1. Establish Numeric Seniority Values
+        // 3. TRAJECTORY DELTA ($\Delta T$)
         const senMap = { 'director': 4, 'manager': 3, 'senior': 2, 'entry': 1, 'unspecified': 2 };
-        const jobSenVal = senMap[seniority] || 2;
+        const jobSenVal = senMap[job.seniority_level] || 2;
         const userSenVal = userProfile.baselineSeniority || 2;
-        
-        // 2. Calculate Deltas
-        let deltaY = jobSenVal - userSenVal; // Positive = Step up, Negative = Step down
-        // Normalize Skill Match: 5+ matches = 100% (1.0)
-        let deltaX = Math.min(1.0, (skillMatchScore || 0) / 5.0); 
+        const deltaT = jobSenVal - userSenVal;
 
-        // 3. The Relevance Floor (Discard absolute noise)
-        if (deltaX < 0.15) {
-            computedZone = 'noise';
-        } else {
-            // 4. Strategy Categorization
-            const strategy = parseInt(userProfile.strategyDial || 2);
-            
-            if (strategy === 1) { // Survival Mode
-                if (deltaY < 0 && deltaX >= 0.4) computedZone = 'safety';
-                else if (deltaY > 0 && deltaX >= 0.3) computedZone = 'moonshot';
-                else computedZone = 'strike';
-            } else if (strategy === 3) { // Aggressive Growth
-                if (deltaY > 0 || (deltaY === 0 && deltaX < 0.5)) computedZone = 'moonshot';
-                else if (deltaY < 0 && deltaX >= 0.8) computedZone = 'safety';
-                else computedZone = 'strike';
-            } else { // Balanced Mode
-                if (deltaY < 0 && deltaX >= 0.7) computedZone = 'safety';
-                else if (deltaY > 0 && deltaX >= 0.4) computedZone = 'moonshot';
-                else computedZone = 'strike';
-            }
+        // 4. ECONOMIC VECTOR ($V_E$) & CULTURE VECTOR ($V_P$) [0 to 1 scale]
+        // Fallback to 0.5 (neutral) if API data is missing salary or culture flags
+        let vE = 0.5; 
+        if (job.salary_mid && userProfile.salaryFloor) {
+            vE = Math.min(1.2, job.salary_mid / userProfile.salaryFloor);
         }
+        let vP = 0.5; // Placeholder for culture alignment
         
-        // 5. Dante's Inferno Override
-        const eligibility = typeof elig !== 'undefined' ? elig : undefined;
-        const isInferno = job.computed_zone === 'inferno' || (typeof eligibility !== 'undefined' && eligibility.computed_zone === 'inferno');
-        if (isInferno) {
-            computedZone = 'inferno';
-            job.inferno_circle = eligibility?.inferno_circle || 'Circle 1: Limbo';
+        // 5. CORE SCORE (C) [0 to 100]
+        // Weighted: 50% Skill, 25% Money, 25% Culture
+        const coreScore = Math.round(((vS * 0.50) + (vE * 0.25) + (vP * 0.25)) * 100);
+        job.match_score = coreScore; // Update UI score to the new Core Score
+
+        // STEP 3: THE STRATEGY DIAL ROUTER (36-STATE LOGIC)
+        let computedZone = 'noise';
+        
+        if (strategy === 1) { 
+            // SURVIVAL MODE (Desperate: Accepts massive step-downs, lower score thresholds)
+            if (coreScore > 65 && deltaT < 0) { computedZone = 'safety'; }
+            else if (coreScore > 50 && deltaT >= 0) { computedZone = 'strike'; }
+            else if (coreScore > 40 && deltaT > 0) { computedZone = 'moonshot'; }
+        } 
+        else if (strategy === 3) { 
+            // AGGRESSIVE MODE (Confident: Pushes lateral moves to safety, demands high growth)
+            if (coreScore > 85 && deltaT <= 0) { computedZone = 'safety'; }
+            else if (coreScore > 75 && deltaT === 1) { computedZone = 'strike'; }
+            else if (coreScore > 50 && deltaT > 0) { computedZone = 'moonshot'; }
+        } 
+        else { 
+            // BALANCED MODE (Standard: Strict Strike Zone, distinct safety/moonshot bounds)
+            if (coreScore > 80 && deltaT < 0) { computedZone = 'safety'; }
+            else if (coreScore > 70 && deltaT >= 0 && deltaT <= 1) { computedZone = 'strike'; }
+            else if (coreScore > 60 && deltaT > 1) { computedZone = 'moonshot'; }
         }
 
-        return {
-            ...job,
-            description_scored: descScored,
-            toxicity_score: toxicityScore,
-            skill_match_score: skillMatchScore,
-            role_title_score: roleTitleScore,
-            leverage_ratio: leverageRatio,
-            final_leverage_ratio: finalLeverageRatio,
-            recency_multiplier: mult,
-            is_stale: isStale,
-            location_type: locationType,
-            seniority_level: seniority,
-            industry: industry,
-            ats_alignment_score: atsScore,
-            apply_type: applyType,
-            salary_min: sal.min,
-            salary_max: sal.max,
-            salary_parseable: sal.parseable,
-            is_ghost_job: isGhost,
-            is_eligible: !isBlacklisted, // Hard drop only on company blacklist
-            discard_reason: isBlacklisted ? 'Blacklisted-Company' : null,
-            computed_zone: computedZone,
-            inferno_circle: infernoCircle,
-            delta_x: deltaX,
-            delta_y: deltaY
-        };
+        job.computed_zone = computedZone;
+        job.matrix_state = `strategy_${strategy}_zone_${computedZone}`;
+        job.delta_x = vS;
+        job.delta_y = deltaT;
+
+        return job;
     },
 
     // ── Recalculate percentiles for a batch of jobs ─────────────────
@@ -435,7 +347,7 @@ const scoringCoordinator = {
         const eligibleJobs = jobsList.filter(j => j.is_eligible === true);
         if (eligibleJobs.length === 0) return jobsList;
         
-        const scores = eligibleJobs.map(j => j.final_leverage_ratio || 0.0);
+        const scores = eligibleJobs.map(j => j.match_score || 0);
         const sortedScores = Array.from(new Set(scores)).sort((a, b) => a - b);
         const scoreToPct = {};
         
@@ -451,7 +363,7 @@ const scoringCoordinator = {
         return jobsList.map(job => {
             if (job.is_eligible !== true) return job;
             
-            const score = job.final_leverage_ratio || 0.0;
+            const score = job.match_score || 0;
             const pct = scoreToPct[score] !== undefined ? scoreToPct[score] : 100;
             
             let tier = 'Tier 3 / Moderate Match';
@@ -462,25 +374,32 @@ const scoringCoordinator = {
 
             // Reset matches to base zone unless classified as inferno or noise
             let finalZone = job.computed_zone;
-            if (finalZone !== "inferno" && finalZone !== "noise") {
-                // Apply Strategy Dial Modifiers
-                const strategy = parseInt(strategyDialVal || 2);
-                const dY = job.delta_y || 0;
-                const dX = job.delta_x || 0;
+            const strategy = parseInt(strategyDialVal || 2);
+
+            if (finalZone !== "inferno" && finalZone !== "noise" && job.matrix_state && !job.matrix_state.includes('noise_logistics_failed') && !job.matrix_state.includes('noise_low_semantic')) {
+                // Apply Strategy Dial Modifiers via 36-State Logic
+                const coreScore = job.match_score || 0;
+                const deltaT = job.delta_y || 0;
                 
-                if (strategy === 1) { // Survival Mode
-                    if (dY < 0 && dX >= 0.4) finalZone = 'safety';
-                    else if (dY > 0 && dX >= 0.3) finalZone = 'moonshot';
-                    else finalZone = 'strike';
-                } else if (strategy === 3) { // Aggressive Growth
-                    if (dY > 0 || (dY === 0 && dX < 0.5)) finalZone = 'moonshot';
-                    else if (dY < 0 && dX >= 0.8) finalZone = 'safety';
-                    else finalZone = 'strike';
-                } else { // Balanced Mode
-                    if (dY < 0 && dX >= 0.7) finalZone = 'safety';
-                    else if (dY > 0 && dX >= 0.4) finalZone = 'moonshot';
-                    else finalZone = 'strike';
+                if (strategy === 1) { 
+                    if (coreScore > 65 && deltaT < 0) { finalZone = 'safety'; }
+                    else if (coreScore > 50 && deltaT >= 0) { finalZone = 'strike'; }
+                    else if (coreScore > 40 && deltaT > 0) { finalZone = 'moonshot'; }
+                    else { finalZone = 'noise'; }
+                } 
+                else if (strategy === 3) { 
+                    if (coreScore > 85 && deltaT <= 0) { finalZone = 'safety'; }
+                    else if (coreScore > 75 && deltaT === 1) { finalZone = 'strike'; }
+                    else if (coreScore > 50 && deltaT > 0) { finalZone = 'moonshot'; }
+                    else { finalZone = 'noise'; }
+                } 
+                else { 
+                    if (coreScore > 80 && deltaT < 0) { finalZone = 'safety'; }
+                    else if (coreScore > 70 && deltaT >= 0 && deltaT <= 1) { finalZone = 'strike'; }
+                    else if (coreScore > 60 && deltaT > 1) { finalZone = 'moonshot'; }
+                    else { finalZone = 'noise'; }
                 }
+                job.matrix_state = `strategy_${strategy}_zone_${finalZone}`;
             }
             
             return {

@@ -270,3 +270,10 @@ This file tracks all changes, architectural decisions, and feature implementatio
   - **Multi-Request Iteration**: Updated `rss-adapter.js` and `remotive-api.js` to iterate over the `queries` array, dispatching independent fetch requests per string and deduplicating results via `payload_hash`.
   - **The Relevance Floor**: Enforced a `deltaX < 0.15` filter inside `scoreAndClassifyJob()` in `scoring-coordinator.js` to automatically categorize jobs with near-zero skill overlap as `noise`. Prevented `recalculatePercentiles` from overwriting this zone.
   - **UI Noise Filtering**: Hardened `db-adapter.js` `getJobs()` logic to actively discard jobs where `computed_zone === 'noise'` from all dashboard view payloads.
+
+### Phase 11.10: The Hexagonal Labor Matrix & 36-State Routing Engine Deployed
+- **Status**: Completed
+- **Changes**:
+  - **Hexagonal Matrix Foundation**: Updated `evaluator.js` with new Logistical and Toxicity Gate logic returning vectors instead of just filtering. Toxicity uses prioritized threshold checks for Dante's 9 Circles.
+  - **36-State Routing**: Replaced naive final_leverage_ratio with Core Score (combining Semantic skill vector, Trajectory Delta, Economic scaling, and placeholder Culture scoring) inside `scoring-coordinator.js` which branches out deterministically based on Strategy Dial constraints.
+  - **UI Matrix Metrics Display**: Job Cards now prominently display the "Core Score" out of 100 instead of arbitrary technical skill overlaps, giving direct feedback on overall opportunity leverage. Reconfigured sorting engine to map to this core score metric seamlessly.
