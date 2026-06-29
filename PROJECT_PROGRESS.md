@@ -245,3 +245,12 @@ This file tracks all changes, architectural decisions, and feature implementatio
   - **9 Circles Classifier Banishment Math**: Dismantled hard-drop discard gates. Toxic listings now persist in the local database but are dynamically routed into the **9 Circles of Corporate Hell** (Limbo, Lust, Gluttony, Greed, Anger, Heresy, Violence, Fraud, Treachery) with customized banner warnings and crackling animation flairs.
   - **Probabilistic Risk/Reward Matrix**: Evaluates listings against user profiles using relative Delta-X (Skills Overlap Ratio) and Delta-Y (Trajectory Seniority Steps) coordinates, shifting classifications dynamically based on Strategy Dial rules.
   - **Automated Resume Seniority Calibration**: Re-engineered `resume-parser.js` to parse uploaded PDF resumes for seniority levels (Director/VP/Founder = 4, Manager/Lead = 3, Senior = 2, Entry = 1) and salary floor anchors, saving the baseline directly into the local `user_profile` IndexedDB store.
+
+### Phase 11.7: Production UX Layout & Math Engine Repair
+- **Status**: Completed
+- **Changes**:
+  - **UI/UX Layout De-Cramming**: Extracted the Zone Tabs and Strategy Dial from the cramped `.controls-card` grid into a dedicated, full-width `<section id="strategy-navigation">` injected directly above the jobs section in `index.html`.
+  - **Styling Hierarchy**: Updated `style.css` to include the `.zone-tabs` class with flexible layout, dark theme adaptations, and interactive `.active` button states. Improved the `.inferno-mode` background variable configuration.
+  - **Delta Math Repair**: Fixed the `NaN` cascade in `scoring-coordinator.js` by establishing bulletproof numeric seniority parsing and correctly normalizing `Delta-X` scaling out of 5 skills.
+  - **Dynamic Categorization Matrix**: Unified the Strategy Dial logic (Survival, Balanced, Aggressive) natively into `scoreAndClassifyJob()` and `recalculatePercentiles()`, ensuring deterministic categorizations based on `Delta-X` and `Delta-Y`. Dante's 9 Circles banishment rules enforce a strict override.
+  - **UI Logic Wiring**: Updated `app.js` and `db-adapter.js` to implement exact filtering based on the selected `currentZone`. Wired real-time IndexedDB persistence to the Strategy Dial event listener, automatically triggering background re-scores.

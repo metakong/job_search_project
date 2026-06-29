@@ -19,7 +19,7 @@ const noResults         = document.getElementById('no-results');
 const jobsGrid          = document.getElementById('jobs-grid');
 const loadMoreBtn       = document.getElementById('load-more-btn');
 const searchInput       = document.getElementById('search-input');
-const tabsGroup         = document.getElementById('tabs-group');
+const zoneTabs          = document.getElementById('zone-tabs');
 const strategyDial      = document.getElementById('strategy-dial');
 const strategyLabel     = document.getElementById('strategy-label');
 const sortSelect        = document.getElementById('sort-select');
@@ -289,7 +289,8 @@ async function fetchData(page = 1, append = false) {
             industry: industryFilter.value,
             salaryMin: salaryMin.value,
             salaryMax: salaryMax.value,
-            hideGhost: hideGhostJobs.checked
+            hideGhost: hideGhostJobs.checked,
+            zone: currentActiveZone
         };
 
         // Query database adapter (Dexie)
@@ -861,22 +862,27 @@ function setupEventListeners() {
         strategyDial.addEventListener('input', (e) => {
             const val = parseInt(e.target.value);
             const labels = {
-                1: "Survival Mode (Desperate)",
-                2: "Balanced (Standard)",
-                3: "Aggressive Growth (Confident)"
+                1: "Survival",
+                2: "Balanced",
+                3: "Aggressive"
             };
             if (strategyLabel) strategyLabel.textContent = labels[val] || "Balanced";
+            
+            // Save value to user profile
+            window.dbAdapter.saveUserProfile({ strategyDial: val }).catch(console.error);
+            
             fetchData(1, false);
         });
     }
 
     // Tabs group navigation
-    if (tabsGroup) {
-        tabsGroup.querySelectorAll('.tab-btn').forEach(btn => {
+    if (zoneTabs) {
+        zoneTabs.querySelectorAll('.zone-tab').forEach(btn => {
             btn.addEventListener('click', () => {
-                tabsGroup.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                zoneTabs.querySelectorAll('.zone-tab').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 currentActiveZone = btn.dataset.zone || 'strike';
+                document.body.classList.toggle('inferno-mode', currentActiveZone === 'inferno');
                 fetchData(1, false);
             });
         });

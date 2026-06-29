@@ -361,9 +361,37 @@ const scoringCoordinator = {
         }
 
         // --- Relative Delta Math for non-inferno listings ---
-        let deltaY = jobSeniorityInt - userSeniorityInt;
-        // Delta-X: skill match overlap ratio (using max possible skills as denominator, let's normalize by a standard number of high/low skills, e.g. 25, or simply skillMatchScore / 25)
-        let deltaX = Math.round((skillMatchScore / 25) * 100) / 100;
+        const isInferno = (computedZone === 'inferno');
+
+        // 1. Establish Numeric Seniority Values
+        const senMap = { 'director': 4, 'manager': 3, 'senior': 2, 'entry': 1, 'unspecified': 2 };
+        const jobSenVal = senMap[seniority] || 2;
+        const userSenVal = userProfile.baselineSeniority || 2;
+        
+        // 2. Calculate Deltas
+        let deltaY = jobSenVal - userSenVal; // Positive = Step up, Negative = Step down
+        // Normalize Skill Match: 5+ matches = 100% (1.0)
+        let deltaX = Math.min(1.0, (skillMatchScore || 0) / 5.0); 
+
+        // 3. Apply Strategy Categorization
+        const strategy = parseInt(userProfile.strategyDial || 2);
+        
+        if (strategy === 1) { // Survival Mode
+            if (deltaY < 0 && deltaX >= 0.4) computedZone = 'safety';
+            else if (deltaY > 0) computedZone = 'moonshot';
+            else computedZone = 'strike';
+        } else if (strategy === 3) { // Aggressive Growth
+            if (deltaY > 0 || deltaX < 0.6) computedZone = 'moonshot';
+            else if (deltaY < 0 && deltaX >= 0.8) computedZone = 'safety';
+            else computedZone = 'strike';
+        } else { // Balanced Mode
+            if (deltaY < 0 && deltaX >= 0.8) computedZone = 'safety';
+            else if (deltaY > 0 || deltaX < 0.4) computedZone = 'moonshot';
+            else computedZone = 'strike';
+        }
+        
+        // 4. Dante's Inferno Override (Must supersede all above logic)
+        if (isInferno) { computedZone = 'inferno'; }
 
         return {
             ...job,
@@ -427,34 +455,22 @@ const scoringCoordinator = {
             let finalZone = job.computed_zone;
             if (finalZone !== "inferno") {
                 // Apply Strategy Dial Modifiers
-                const dial = parseInt(strategyDialVal);
-                if (dial === 1) {
-                    // Survival Mode: Lower required salary threshold by 30%
-                    // Automatically re-classify jobs where Delta-Y < 0 (user is overqualified) but Delta-X > 0.75 (75%) into safety net
-                    if (job.delta_y < 0 && job.delta_x > 0.75) {
-                        finalZone = "safety";
-                    } else {
-                        finalZone = "strike"; // Default to strike zone
-                    }
-                } else if (dial === 2) {
-                    // Balanced Mode: Jobs with Delta-X >= 60% (0.60) and Delta-Y between -1 and +1 are directed to the Strike Zone
-                    if (job.delta_x >= 0.60 && job.delta_y >= -1 && job.delta_y <= 1) {
-                        finalZone = "strike";
-                    } else if (job.delta_y < -1) {
-                        finalZone = "safety";
-                    } else {
-                        finalZone = "moonshot";
-                    }
-                } else if (dial === 3) {
-                    // Aggressive Growth: Loosen required skill matches by 20%.
-                    // Jobs where Delta-Y > 1 (clear promotion) and Delta-X >= 0.40 are elevated to Moonshot
-                    if (job.delta_y > 1 && job.delta_x >= 0.40) {
-                        finalZone = "moonshot";
-                    } else if (job.delta_y < 0) {
-                        finalZone = "safety";
-                    } else {
-                        finalZone = "strike";
-                    }
+                const strategy = parseInt(strategyDialVal || 2);
+                const dY = job.delta_y || 0;
+                const dX = job.delta_x || 0;
+                
+                if (strategy === 1) { // Survival Mode
+                    if (dY < 0 && dX >= 0.4) finalZone = 'safety';
+                    else if (dY > 0) finalZone = 'moonshot';
+                    else finalZone = 'strike';
+                } else if (strategy === 3) { // Aggressive Growth
+                    if (dY > 0 || dX < 0.6) finalZone = 'moonshot';
+                    else if (dY < 0 && dX >= 0.8) finalZone = 'safety';
+                    else finalZone = 'strike';
+                } else { // Balanced Mode
+                    if (dY < 0 && dX >= 0.8) finalZone = 'safety';
+                    else if (dY > 0 || dX < 0.4) finalZone = 'moonshot';
+                    else finalZone = 'strike';
                 }
             }
             

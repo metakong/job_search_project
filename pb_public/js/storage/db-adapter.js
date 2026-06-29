@@ -49,6 +49,11 @@ const dbAdapter = {
             // 1. Filter out duplicates or non-eligible unless specified
             items = items.filter(item => item.is_eligible !== false);
 
+            // 1b. Zone filter
+            if (filters.zone) {
+                items = items.filter(item => item.computed_zone === filters.zone);
+            }
+
             // 2. Status filter
             if (filters.status && filters.status !== 'ALL') {
                 items = items.filter(item => item.target_status === filters.status);
