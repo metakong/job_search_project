@@ -110,7 +110,7 @@
             for (const kw of keywords) {
                 if (hay.includes(kw)) hits++;
             }
-            return hits / keywords.length;
+            return hits / Math.max(keywords.length, 5);
         },
         
         computeATSScore(jobText, hardKeywords) {

@@ -69,14 +69,21 @@
                 recentSeniority = this._detectSeniority(recentText);
             }
 
+            // Salary floor: ONLY trust $-amounts that appear in an explicit pay
+            // context. Résumés are full of dollar figures (budgets managed, revenue
+            // driven, deal sizes) that must never be misread as the candidate's
+            // salary — the old code took min() over *all* of them.
             let salaryFloor = currentFloor || 40000;
-            const re = /\$\s*([\d,]+)\s*(?:k|K)?\b/g;
+            const SALARY_CTX = /(salary|compensation|\bpay\b|\bwage\b|\bbase\b|per\s+year|\/\s*yr|annual|per\s+hour|\/\s*hr|hourly)/i;
+            const moneyRe = /\$\s*([\d,]+(?:\.\d+)?)\s*(k|K)?/g;
             const found = [];
-            while ((m = re.exec(text || '')) !== null) {
+            while ((m = moneyRe.exec(text || '')) !== null) {
+                const ctx = (text || '').substring(Math.max(0, m.index - 40), m.index + m[0].length + 40);
+                if (!SALARY_CTX.test(ctx)) continue;       // skip non-pay figures
                 let val = parseFloat(m[1].replace(/,/g, ''));
-                if (val < 1000 && m[0].toLowerCase().includes('k')) val *= 1000;
-                else if (val < 250) val *= 2080; // hourly → annual
-                if (val >= 20000 && val <= 400000) found.push(val);
+                if (m[2]) val *= 1000;                     // explicit "k"
+                else if (val > 0 && val < 250) val *= 2080; // hourly → annual
+                if (val >= 15000 && val <= 600000) found.push(val);
             }
             if (found.length) salaryFloor = Math.min(...found);
             

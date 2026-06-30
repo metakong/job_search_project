@@ -6,7 +6,7 @@ const CONFIG = {
     VERSION: '13.4.0',
     SCORING_CHUNK_SIZE: 25,
     FETCH_THROTTLE_MS: 500,
-    FETCH_TIMEOUT_MS: 12000,     // per-attempt CORS fetch timeout (AbortController)
+    FETCH_TIMEOUT_MS: 8000,      // per-attempt CORS fetch timeout (AbortController); keeps a fully-blocked sweep responsive
     WORKER_TIMEOUT_MS: 10000,
 
     // ── Distribution / zoning (Phase 13.4) ──────────────────────────────

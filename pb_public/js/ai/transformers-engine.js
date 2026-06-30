@@ -40,37 +40,49 @@ const transformersEngine = {
         };
         
         const id = this.requestId++;
+        let timeoutHandle;
         const workerPromise = new Promise((resolve, reject) => {
             this.pendingPromises.set(id, { resolve, reject });
             this.worker.postMessage({ id, type: 'init' });
         });
-        
+
         const timeoutPromise = new Promise((resolve) => {
-            setTimeout(() => {
+            timeoutHandle = setTimeout(() => {
                 this.pendingPromises.delete(id);
                 this.degraded = true;
                 console.warn('[Transformers Engine] Init timed out after 30s. Gracefully degrading to keyword matching.');
                 resolve(false);
             }, 30000);
         });
-        
-        return Promise.race([workerPromise, timeoutPromise]);
+
+        // CRITICAL: clear the timer once the race settles. Previously it kept
+        // running and flipped `degraded = true` ~30s after a SUCCESSFUL init,
+        // silently killing semantic matching mid-session. An init error now
+        // degrades gracefully instead of rejecting up to the caller.
+        return Promise.race([workerPromise, timeoutPromise])
+            .then(result => result, err => {
+                this.degraded = true;
+                console.warn('[Transformers Engine] Init failed; using keyword matching.', err && err.message);
+                return false;
+            })
+            .finally(() => clearTimeout(timeoutHandle));
     },
 
     _send(type, data = {}) {
         if (this.degraded) return Promise.reject(new Error("Engine is degraded"));
         const id = this.requestId++;
+        let timeoutHandle;
         const workerPromise = new Promise((resolve, reject) => {
             this.pendingPromises.set(id, { resolve, reject });
             this.worker.postMessage({ id, type, data });
         });
         const timeoutPromise = new Promise((_, reject) => {
-            setTimeout(() => {
+            timeoutHandle = setTimeout(() => {
                 this.pendingPromises.delete(id);
                 reject(new Error(`Worker ${type} timed out`));
             }, window.CONFIG?.WORKER_TIMEOUT_MS || 10000);
         });
-        return Promise.race([workerPromise, timeoutPromise]);
+        return Promise.race([workerPromise, timeoutPromise]).finally(() => clearTimeout(timeoutHandle));
     },
 
     async getEmbedding(text, isResume = false) {

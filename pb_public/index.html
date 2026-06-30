@@ -17,8 +17,8 @@
     <!-- PWA Manifest -->
     <link rel="manifest" href="manifest.json">
     <link rel="icon" href="icon.svg" type="image/svg+xml">
-    <!-- Dexie.js for IndexedDB -->
-    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+    <!-- Dexie.js for IndexedDB (pinned + matches the service-worker precache for offline) -->
+    <script src="https://cdn.jsdelivr.net/npm/dexie@4.0.8/dist/dexie.min.js"></script>
     <!-- PDF.js for client-side resume parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <!-- Fuse.js for client-side fuzzy blacklist matching -->

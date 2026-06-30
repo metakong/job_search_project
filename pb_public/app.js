@@ -205,11 +205,23 @@ async function runIngestionSweep() {
         window.scoringCoordinator.distributeAndRank(allJobsCache);
         await window.dbAdapter.persistJobs(allJobsCache);
 
-        const ineligible = scored.filter(j => j.is_eligible === false || j.computed_zone === 'noise').length;
+        // Count hidden listings from the distributed cache (the live source of truth):
+        // the `scored` array is still 'pending' at this point, so it under-reported noise.
+        const hidden = allJobsCache.filter(j => j.is_eligible === false || j.computed_zone === 'noise').length;
         setStat('stat-raw-ingested', rawJobs.length);
-        setStat('stat-discarded', ineligible + duplicates);
+        setStat('stat-discarded', hidden + duplicates);
 
-        alert(`Sweep complete! ${newInserts} new listings added, ${duplicates} duplicates skipped.`);
+        // Honest, actionable completion message — never just "0 added" with no guidance.
+        let msg;
+        if (rawJobs.length === 0) {
+            msg = 'No jobs came through this time. Public job-board proxies are sometimes rate-limited or temporarily blocked — try another sweep in a few minutes. For more reliable access, set a custom CORS proxy under Settings → Edit Setup Parameters → Advanced Settings.';
+        } else if (newInserts === 0) {
+            msg = `Sweep complete — no new listings (all ${duplicates} found were already in your database).`;
+        } else {
+            msg = `Sweep complete! ${newInserts} new listing${newInserts === 1 ? '' : 's'} added` +
+                  (duplicates ? `, ${duplicates} duplicate${duplicates === 1 ? '' : 's'} skipped.` : '.');
+        }
+        alert(msg);
         fetchData(1, false);
     } catch (err) {
         console.error('[Ingest] Core extraction failure:', err.stack || err);
@@ -322,8 +334,9 @@ async function fetchData(page = 1, append = false) {
 
         // Strategy Dial slicing.
         //   • Inferno view → dial is N/A (hazard ≠ career strategy); show every posting.
-        //   • Low-volume bucket → disable 1/3 micro-slicing & show the whole bucket,
-        //     so a starved pool never renders an empty "Zero Results" screen.
+        //   • Low-volume bucket → disable 1/3 micro-slicing & show the WHOLE bucket
+        //     (no tier filter), so a starved pool never renders an empty screen AND
+        //     the dial never additively reveals a superset. Exclusive-or-nothing.
         //   • Otherwise → EXCLUSIVE slice: show ONLY the tier matching the dial
         //     (untiered jobs stay visible as a safety net).
         let preloaded = allJobsCache;
@@ -903,7 +916,14 @@ function setupEventListeners() {
         const file = e.target.files[0];
         if (!file) return;
         if (confirm('Importing a backup will merge into your existing data. Proceed?')) {
-            try { await window.dataPortability.importData(file); await loadAllJobs(); alert('Backup imported.'); fetchData(1, false); }
+            try {
+                await window.dataPortability.importData(file);
+                await loadAllJobs();
+                alert('Backup imported — re-scoring with the current engine…');
+                // Imported listings may have been scored by an older engine; re-score
+                // and re-zone them so they're consistent with this version.
+                await runBackgroundRescore();
+            }
             catch (err) { alert(`Import failed: ${err.message}`); }
         }
         importDbFile.value = '';

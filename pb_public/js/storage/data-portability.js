@@ -12,9 +12,11 @@ const dataPortability = {
                 tables: {}
             };
             
+            // Live tables only (source_health was removed from the schema). The guard
+            // below still skips any name absent from the current DB, for safety.
             const tables = [
-                'job_listings', 'blacklisted_companies', 'filter_profiles', 
-                'ats_watchlist', 'source_health', 'user_profile', 'embeddings'
+                'job_listings', 'blacklisted_companies', 'filter_profiles',
+                'ats_watchlist', 'user_profile', 'embeddings'
             ];
             
             for (const tableName of tables) {

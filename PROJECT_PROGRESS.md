@@ -347,3 +347,36 @@ This file tracks all changes, architectural decisions, and feature implementatio
 - **Config (`config.js`)**: bumped to `13.4.0`; added `INFERNO_TOXICITY_THRESHOLD`, `INFERNO_MAX_FRACTION`, `NOISE_FIT_FLOOR`, `STRIKE_FIT_MIN`, `MOONSHOT_FIT_MIN`, `LOW_VOLUME_THRESHOLD`, `FETCH_TIMEOUT_MS`; removed the now-dead `MIN_TOXICITY_FLOOR` / `INFERNO_PERCENTILE` / `MIN_CLEAN_POOL_FOR_DISTRIBUTION`. **Fixed a latent bug**: the coordinator read `window.APP_CONFIG` (never set) and silently used inline defaults — it now reads `window.CONFIG`, so these constants actually apply.
 - **Schema (`local-db.js`)**: added v4 (logic-only change) that re-flags `requires_rescore_v13`, so existing users' listings are re-routed by the new engine on next load.
 - **Validation**: `scratch/sim-harness.js`-style Node harness loads the real modules with a stub `window` and asserts the invariants across three scenarios — mixed pool, **pure starvation** (34 off-target roles → all Safety, none promoted, app not blank), and **toxic flood** (30 scams → Inferno capped at exactly 40%). All assertions pass. Verified live in-browser: zone routing, exclusive/low-volume slicing, and the Inferno dial state.
+
+### Phase 1.0 Finalization
+- **Status**: Completed
+- **Changes**:
+  - **Mathematical Anchoring (`skill-matcher.js`)**: Replaced raw keyword count denominator with `Math.max(keywords.length, 5)` to eliminate the 100% Fit Paradox on sparse descriptions.
+  - **The Cross-Domain Veto (`scoring-coordinator.js`)**: Implemented a title-based veto matrix (comparing `profile.categories` against explicit `TECH_TITLES` and `SALES_TITLES` lists) that sinks `deltaX` by an 80% penalty if a cross-functional mismatch occurs. Avoided the "Industry vs. Function" trap.
+  - **The Top-Level Noise Gate (`scoring-coordinator.js`)**: Installed a `deltaX < 0.25` guard clause immediately following the veto execution, definitively blocking irrelevant jobs from polluting the Trajectory or Safety Net logic.
+  - **Title-Strict Seniority (`scoring-coordinator.js`)**: Verified and maintained `detectSeniority`'s strict adherence to scanning only `job.title`, eliminating structural hallucinations.
+  - **Dynamic UI Slicing Override (`app.js`)**: Hardcoded the low-volume threshold to `30`. Implemented logic to dynamically fallback from Exclusive Slicing (`=== strategy_tier`) to Additive Slicing (`<= strategy_tier`) when the bucket is below threshold, protecting non-technical users from blank "Zero Results" dashboards.
+  - > ⚠️ **Superseded by Phase 13.5.** Two of the bullets above shipped real regressions (verified by harness + browser): the `deltaX < 0.25` Noise Gate `return`ed *before* toxicity scoring, so off-field scams silently escaped Inferno; and the "Additive Slicing" fallback re-introduced the Diagnostic-3 slider bug and could blank the Survival view. See Phase 13.5 for the corrected, validated behavior.
+
+### Phase 13.5: Full-Codebase Production Audit & Drift Reconciliation
+- **Status**: Completed (validated: Node harness 15/15 + live browser parity)
+- **Context**: Whole-codebase pass to fix all logical/math mistakes and reach June-2026 production quality for non-technical users (advanced/technical-user features intentionally deferred to a future phase). It also reconciled an external "Phase 1.0 Finalization" edit that had regressed verified Phase 13.4 behavior.
+
+- **Drift reconciliation (`scoring-coordinator.js`, `app.js`)** — the highest-severity finds:
+  - **Off-field scams escaping Inferno (CRITICAL).** A `deltaX < 0.25` "Noise Gate" early-`return` inside `scoreAndClassifyJob` ran *before* toxicity evaluation, so any toxic posting with low résumé fit (e.g. a scam targeting someone outside its field — the common case) was silently filed as hidden `noise` and never flagged. Removed the early return. `scoreAndClassifyJob` now always computes the full signal set (toxicity, Core, trajectory) for every posting; **`distributeAndRank` remains the single source of truth for noise/zoning.** Locked with a permanent harness assertion ("off-field scam → Inferno").
+  - **Cross-domain veto kept, made non-fatal.** The title-based domain check (good intent) was reworked from an 80% penalty + early-exit into a bounded ×0.4 fit *damp* with word-boundary matching (so "Salesforce"/"Sales Engineer" aren't false-flagged) and **no short-circuit**.
+  - **Additive slider regression reverted.** `app.js` low-volume slicing had been changed back to `<= strategy_tier` (additive — Diagnostic 3) with a hardcoded `30`. Restored to config-driven `LOW_VOLUME_THRESHOLD`: high-volume = exclusive `=== dial`; low-volume = **whole bucket, no tier filter** (never additive, never blank). Re-verified in browser: Strike 10/10/10 across the dial; a 1-job Safety bucket shows at every position incl. Survival.
+  - Kept the `Math.max(keywords.length, 5)` overlap anchor (a sound anti-inflation guard) and title-only seniority (already correct).
+
+- **Logical / math bug fixes (audit)**:
+  - **`transformers-engine.js` (CRITICAL for opt-in AI)**: `init()`'s 30s timeout was never cleared, so it fired *after a successful init* and flipped `degraded = true`, silently killing semantic matching mid-session. Now cleared on settle; init errors degrade gracefully. `_send()` timers are likewise cleared.
+  - **`setup-wizard.js`**: warm-up posted to `window.semanticWorker`, which never existed (the worker is owned by `transformersEngine`). Now calls `transformersEngine.init()` — the correct pre-warm path.
+  - **`resume-parser.js`**: salary-floor calibration took `min()` over *every* `$` figure in a résumé (budgets, revenue, hourly), so "managed a $250k budget" could become the salary floor. Now only counts amounts in an explicit pay context.
+  - **`app.js`**: imported backups are now re-scored with the current engine (were left with stale zones); the ingest-complete message is honest and actionable when 0 jobs return (no more bare "0 added"); the "discarded" stat counts from the distributed cache instead of the pre-distribution array.
+  - **`data-portability.js`**: dropped the stale `source_health` table from the export list.
+
+- **June-2026 best-practice / PWA hardening**:
+  - **`index.html` + `sw.js`**: pinned Dexie to `4.0.8` (was `dexie@latest` — the SW even forbids `@latest`) and aligned it with the service-worker precache URL; added the missing `themuse-api.js`, `ambiguity-index.js`, `transition-friction.js` to `CORE_ASSETS`; bumped cache to `job-search-v3`. Offline + reproducibility now hold.
+  - **`config.js`**: `FETCH_TIMEOUT_MS` 12s → 8s so a fully-blocked sweep stays responsive.
+  - *Deferred (noted, not done): Subresource Integrity hashes on CDN `<script>`s — valuable, but a wrong hash bricks load and the exact digests can't be computed safely from here. Recommended as a follow-up. The self-hosted `cors-proxy/worker.js` (advanced-user, self-host territory) was left as-is for the future technical-user phase.*
+

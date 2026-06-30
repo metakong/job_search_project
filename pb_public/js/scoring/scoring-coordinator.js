@@ -226,6 +226,22 @@
                 else                                         deltaX = builtinNorm;
             }
             deltaX = clamp(deltaX, 0, 1);
+
+            // Cross-domain de-prioritization (NON-FATAL): if the TITLE clearly belongs
+            // to a domain the candidate didn't select, damp the fit signal so a
+            // coincidental keyword overlap can't masquerade as a strong match. This must
+            // never short-circuit scoring — every posting still needs toxicity (so an
+            // off-field scam is still caught for Inferno) and full Core/trajectory math.
+            // The actual hide/zone decision is owned by distributeAndRank's fit gates.
+            const userCats = (userProfile && userProfile.categories) ? userProfile.categories.map(c => String(c).toLowerCase()) : [];
+            if (userCats.length) {
+                const TECH_RE  = /\b(engineer|developer|devops|back[- ]?end|front[- ]?end|programmer|data scientist|software architect|\bsre\b|ios|android)\b/i;
+                const SALES_RE = /\b(account executive|sales rep(?:resentative)?|\bsdr\b|\bbdr\b|account manager|business development|sales director|inside sales)\b/i;
+                if (!userCats.includes('tech') && TECH_RE.test(title)) deltaX *= 0.4;
+                else if (!userCats.includes('sales') && SALES_RE.test(title)) deltaX *= 0.4;
+                deltaX = clamp(deltaX, 0, 1);
+            }
+
             job.delta_x = deltaX;
             job.fit_score = Math.round(deltaX * 100);
             

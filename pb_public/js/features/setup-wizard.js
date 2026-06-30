@@ -183,8 +183,11 @@
                 });
                 console.log('[Setup Wizard] Settings saved.');
 
-                if (enableSemanticMatching && window.semanticWorker) {
-                    window.semanticWorker.postMessage({ action: 'warmup' });
+                // Pre-warm the embedding model so the first sweep isn't blocked on a
+                // cold download. `window.semanticWorker` never existed; the worker is
+                // owned by transformersEngine — init() is the correct warm-up entry point.
+                if (enableSemanticMatching && window.transformersEngine) {
+                    window.transformersEngine.init().catch(() => { /* degrades to keyword matching */ });
                 }
 
                 document.body.classList.remove('no-scroll');
