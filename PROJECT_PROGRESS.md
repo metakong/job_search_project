@@ -296,3 +296,19 @@ This file tracks all changes, architectural decisions, and feature implementatio
 - **Granular control**: wizard now takes free-text target roles and an explicit current-level selector; recency defaults to "All"; honest privacy disclosure about the CORS proxy.
 - **Modules** are now IIFE-wrapped (removed duplicate global `escapeRegExp` definitions). Dexie schema bumped to v2 with migration.
 - **Verification**: Node simulation harness asserts known-toxic→Inferno, known-good→not, correct zone placement across all three Strategy Dial settings, and Inferno-minority distributions (11/11 pass). All 62 DOM ids referenced by `app.js` confirmed present in `index.html`.
+
+### Phase 12.1: Async Stabilization & Pipeline Resiliency
+- **Status**: Completed
+- **Changes**:
+  - **Sequential Network Throttling (`app.js`)**: Replaced concurrent `Promise.all()` fetching with sequential `for...of` loops and injected a global `sleep(1000)` throttle to prevent CORS proxy rate-limiting and DDoS. Added granular UI updates via `updateLoadingText()`.
+  - **AI Pre-Warming & Timeout Fallback (`setup-wizard.js`, `transformers-engine.js`)**: Sent a `warmup` message to the semantic worker if AI Semantic Matching is enabled to trigger background model download. Wrapped the Web Worker `postMessage` call in `transformers-engine.js` with a `Promise.race()` and a 10-second timeout to gracefully degrade to keyword math if the model download hangs.
+  - **Database Write Chunking (`db-adapter.js`)**: Rewrote `saveJobsBulk(jobs)` to chunk IndexedDB writes (arrays of 25) to prevent memory spikes. Retained payload hash deduplication logic.
+  - **Targeted DOM Mutations (`app.js`)**: Optimized the save status action in the modal by removing full screen re-rendering `renderCards()`. Now manually queries and updates the specific card's pill row directly in the DOM using its ID (`job-card-{id}`).
+  ### Phase 13.0: Dynamic Probabilistic Scoring & Pipeline Architecture Refactor
+- **Status**: Completed
+- **Changes**:
+  - **Component 1 (Pipeline Stabilization)**: Refactored configurations for robust timeouts, chunked persistence to IndexedDB to avoid freezing the UI, worker queues, and timeout defaults.
+  - **Component 2 (New Scoring Modules)**: Created `ambiguity-index.js` (Shannon entropy approach) and `transition-friction.js` to compute transition probabilities based on job title, industry, and skills.
+  - **Component 3 (Scoring Engine Refactor)**: Refactored `resume-parser.js` for Peak vs Recent seniority detection. Added `computeWeightedOverlap` in `skill-matcher.js`. Overhauled `scoring-coordinator.js` to use a 2-phase pipeline (feature extraction -> global percentile distribution). Re-calibrated the toxicity minimum floor to 75 (0-100 scale).
+  - **Component 4 (Schema Migration)**: Bumped Dexie DB schema in `local-db.js` to v3. Added new fields (`ambiguity_index`, `transition_friction`, `strategy_tier`, `zone_rank`). Implemented a `requires_rescore_v13` trigger on upgrade.
+  - **Component 5 (UI Updates)**: Refactored Strategy Dial to be an exclusive filter (`db-adapter.js`) mapping strictly to 1/3 subsets. Updated `app.js` to handle `requires_rescore_v13` with a non-blocking toast, and implemented dual seniority dropdowns in `setup-wizard.js`. Added `card--pending` CSS for loading states.

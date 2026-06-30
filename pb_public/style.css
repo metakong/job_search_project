@@ -1226,3 +1226,31 @@ button.copied .copy-icon { transform: scale(1.1); }
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
+/* ── UI States ───────────────────────────────────────────────────────── */
+.card--pending {
+    opacity: 0.6;
+    pointer-events: none;
+    position: relative;
+    overflow: hidden;
+}
+
+.card--pending::after {
+    content: "Calculating Fit…";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(15, 22, 35, 0.9);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--color-tier2);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 10;
+}
+
+.strategy-hidden {
+    display: none !important;
+}

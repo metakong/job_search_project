@@ -111,6 +111,17 @@
                 if (hay.includes(kw)) hits++;
             }
             return hits / keywords.length;
+        },
+        
+        computeATSScore(jobText, hardKeywords) {
+            return this.overlapRatio(jobText, hardKeywords);
+        },
+
+        computeWeightedOverlap(resumeSkills, softSkills, jobText, ambiguityIndex) {
+            const hardOverlap = this.overlapRatio(jobText, resumeSkills);
+            const softOverlap = this.overlapRatio(jobText, softSkills);
+            const AI = ambiguityIndex || 0;
+            return (1 - 0.3 * AI) * hardOverlap + (0.3 * AI) * softOverlap;
         }
     };
 

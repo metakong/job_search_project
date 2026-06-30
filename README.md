@@ -33,13 +33,13 @@ From those, each job lands in one zone:
 
 ### The Job Hunt Strategy Dial
 
-A 3-step dial reshapes the zone thresholds in real time:
+A 3-step dial reshapes your feed using an exclusive tiering system based on Transition Friction, allowing you to focus purely on the jobs that match your risk appetite:
 
-- **Survival** — market is brutal; widen the net, embrace step-downs, surface every viable option.
-- **Balanced** — the default.
-- **Aggressive** — you're employed and picky; emphasize reaches, keep only strong matches, hide mediocrity.
+- **Survival** — Reveals jobs with the lowest transition friction (most aligned, easiest to secure).
+- **Balanced** — The default. Reveals a balanced slice of the market.
+- **Aggressive** — Reveals jobs with higher transition friction (reaches, pivots, and stretch roles).
 
-Changing the dial re-scores your whole local database and re-sorts every zone.
+Changing the dial instantly filters your feed to reveal ONLY that distinct subset of jobs, without requiring a full database re-score.
 
 ---
 
@@ -56,6 +56,7 @@ Changing the dial re-scores your whole local database and re-sorts every zone.
 | **Granular Filtering** | Zone, application status, location type, industry, salary range, recency window, full-text search, saveable filter profiles. |
 | **Company Blacklist** | One-click blacklist with fuzzy matching (Fuse.js). Never see that company again. |
 | **Optional AI Semantic Matching** | Opt-in local embedding model (Transformers.js) for deeper résumé↔job similarity. Off by default; keyword matching otherwise. |
+| **Dynamic Probabilistic Scoring** | Shannon entropy (Ambiguity Index) and transition friction probabilistic models accurately evaluate non-linear careers and missing data without rigid ceilings. |
 | **Data Portability** | Full JSON export/import. Your data is yours. 30-day backup reminders. |
 
 ---
@@ -106,6 +107,8 @@ Nothing else — your résumé, your scores, your tracked applications — ever 
                         ▼  raw listings
 ┌───────────────────────────────────────────────┐
 │  SCORING PIPELINE (scoring-coordinator.js)     │
+│  • ambiguity-index  → data entropy/confidence  │
+│  • transition-friction → career pivot logic    │
 │  • skill-matcher    → résumé-driven Fit (Δx)   │
 │  • evaluator        → calibrated toxicity / 9 Circles │
 │  • culture-evaluator→ culture vector           │

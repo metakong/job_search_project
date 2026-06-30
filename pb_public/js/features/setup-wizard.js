@@ -47,12 +47,21 @@
                                     <input type="number" id="wizard-salary" value="${escAttr(currentProfile.salaryFloor || 40000)}" required>
                                 </div>
                                 <div>
-                                    <label for="wizard-seniority">Your Current Level</label>
-                                    <select id="wizard-seniority">
-                                        <option value="1" ${sen === 1 ? 'selected' : ''}>Entry / Associate</option>
-                                        <option value="2" ${sen === 2 ? 'selected' : ''}>Senior / Individual Contributor</option>
-                                        <option value="3" ${sen === 3 ? 'selected' : ''}>Manager / Lead</option>
-                                        <option value="4" ${sen === 4 ? 'selected' : ''}>Director / VP+</option>
+                                    <label for="wizard-peak-seniority">Your Peak Career Level</label>
+                                    <select id="wizard-peak-seniority">
+                                        <option value="1" ${currentProfile.peakSeniority === 1 ? 'selected' : ''}>Entry / Associate</option>
+                                        <option value="2" ${(currentProfile.peakSeniority === 2 || !currentProfile.peakSeniority) ? 'selected' : ''}>Senior / Individual Contributor</option>
+                                        <option value="3" ${currentProfile.peakSeniority === 3 ? 'selected' : ''}>Manager / Lead</option>
+                                        <option value="4" ${currentProfile.peakSeniority === 4 ? 'selected' : ''}>Director / VP+</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="wizard-recent-seniority">Your Recent Level</label>
+                                    <select id="wizard-recent-seniority">
+                                        <option value="1" ${currentProfile.recentSeniority === 1 ? 'selected' : ''}>Entry / Associate</option>
+                                        <option value="2" ${(currentProfile.recentSeniority === 2 || !currentProfile.recentSeniority) ? 'selected' : ''}>Senior / Individual Contributor</option>
+                                        <option value="3" ${currentProfile.recentSeniority === 3 ? 'selected' : ''}>Manager / Lead</option>
+                                        <option value="4" ${currentProfile.recentSeniority === 4 ? 'selected' : ''}>Director / VP+</option>
                                     </select>
                                 </div>
                             </div>
@@ -113,7 +122,8 @@
             // Résumé parsing.
             const fileInput = document.getElementById('wizard-resume-file');
             const statusDiv = document.getElementById('wizard-resume-status');
-            const senSelect = document.getElementById('wizard-seniority');
+            const peakSelect = document.getElementById('wizard-peak-seniority');
+            const recentSelect = document.getElementById('wizard-recent-seniority');
             const salaryInput = document.getElementById('wizard-salary');
             let extractedResumeText = currentProfile.resumeText || '';
 
@@ -125,8 +135,9 @@
                     const text = await window.resumeParser.parsePDF(file);
                     extractedResumeText = text;
                     const cal = window.resumeParser.calibrateFromText(text, parseInt(salaryInput.value) || 40000);
-                    senSelect.value = String(cal.baselineSeniority);   // auto-calibrate (user can override)
-                    statusDiv.textContent = `✅ Parsed ${text.length} chars. Detected level: ${senSelect.options[senSelect.selectedIndex].text}.`;
+                    peakSelect.value = String(cal.peakSeniority);
+                    recentSelect.value = String(cal.recentSeniority);
+                    statusDiv.textContent = `✅ Parsed ${text.length} chars. Peak Level: ${peakSelect.options[peakSelect.selectedIndex].text}.`;
                     statusDiv.style.color = 'var(--color-tier1)';
                 } catch (err) {
                     statusDiv.textContent = `❌ Parsing failed: ${err.message}`;
@@ -149,19 +160,32 @@
                 if (document.getElementById('wizard-cat-tech').checked) { categories.push('tech'); search_queries.push('AI Systems', 'Data Operations', 'Systems Architecture'); }
                 search_queries = Array.from(new Set(search_queries));
 
+                const enableSemanticMatching = document.getElementById('wizard-semantic').checked;
+                
+                // Keep baselineSeniority as fallback for old data in case anything still references it,
+                // but we mainly write peakSeniority and recentSeniority
+                const peak = parseInt(peakSelect.value) || 2;
+                const recent = parseInt(recentSelect.value) || peak;
+                
                 await window.dbAdapter.saveUserProfile({
                     location: document.getElementById('wizard-location').value,
                     radius: parseInt(document.getElementById('wizard-radius').value) || 30,
                     salaryFloor: parseInt(salaryInput.value) || 40000,
-                    baselineSeniority: parseInt(senSelect.value) || 2,
+                    baselineSeniority: peak, // backwards compatibility
+                    peakSeniority: peak,
+                    recentSeniority: recent,
                     categories,
                     search_queries,
                     resumeText: extractedResumeText,
                     corsProxyOverride: document.getElementById('wizard-proxy').value,
-                    enableSemanticMatching: document.getElementById('wizard-semantic').checked,
+                    enableSemanticMatching: enableSemanticMatching,
                     isFirstRun: false
                 });
                 console.log('[Setup Wizard] Settings saved.');
+
+                if (enableSemanticMatching && window.semanticWorker) {
+                    window.semanticWorker.postMessage({ action: 'warmup' });
+                }
 
                 document.body.classList.remove('no-scroll');
                 dialog.close();

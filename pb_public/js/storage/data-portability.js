@@ -18,7 +18,9 @@ const dataPortability = {
             ];
             
             for (const tableName of tables) {
-                exportPayload.tables[tableName] = await window.localDB[tableName].toArray();
+                if (window.localDB[tableName]) {
+                    exportPayload.tables[tableName] = await window.localDB[tableName].toArray();
+                }
             }
             
             const jsonString = JSON.stringify(exportPayload, null, 2);
@@ -67,11 +69,9 @@ const dataPortability = {
                         
                         // Import tables sequentially
                         for (const [tableName, rows] of Object.entries(payload.tables)) {
-                            if (window.localDB[tableName]) {
+                            if (window.localDB[tableName] && rows.length > 0) {
                                 console.log(`[Data Portability] Restoring ${rows.length} rows to ${tableName}...`);
-                                for (const row of rows) {
-                                    await window.localDB[tableName].put(row);
-                                }
+                                await window.localDB[tableName].bulkPut(rows);
                             }
                         }
                         

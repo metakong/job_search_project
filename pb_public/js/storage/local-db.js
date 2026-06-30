@@ -25,8 +25,14 @@ db.version(2).stores({
     ats_watchlist: 'id, company_name, ats_type, active',
     user_profile: 'id',
     embeddings: 'id, job_id'   // optional semantic-matching cache (opt-in feature)
+});
+
+// v3 — add new indexed fields for dynamic probabilistic scoring
+db.version(3).stores({
+    job_listings: 'id, title, company_name, application_status, computed_zone, location_type, industry, is_ghost_job, is_eligible, days_since_posted, match_score, match_percentile, payload_hash, posted_at, ambiguity_index, transition_friction, strategy_tier, zone_rank'
 }).upgrade(() => {
-    console.log('[Storage] Migrated JobSearchDB schema to v2.');
+    console.log('[Storage] Migrated JobSearchDB schema to v3.');
+    localStorage.setItem('requires_rescore_v13', 'true');
 });
 
 console.log('[Storage] Dexie IndexedDB initialized.');

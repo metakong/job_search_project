@@ -7,15 +7,24 @@ const transformersEngine = {
     pendingPromises: new Map(),
     requestId: 0,
     isInitialized: false,
+    degraded: false,
+    _resumeCache: { text: null, vector: null },
+
+    isDegraded() {
+        return this.degraded;
+    },
 
     init() {
+        if (this.degraded) return Promise.resolve(false);
         if (this.worker) return Promise.resolve(this.isInitialized);
         
         console.log('[Transformers Engine] Initializing worker thread...');
         this.worker = new Worker('js/workers/semantic-worker.js');
         
         this.worker.onmessage = (e) => {
-            const { id, type, vector, error } = e.data;
+            const { id, type, vector, error, status } = e.data;
+            if (type === 'status') return;
+
             const promise = this.pendingPromises.get(id);
             if (!promise) return;
 
@@ -30,22 +39,62 @@ const transformersEngine = {
             this.pendingPromises.delete(id);
         };
         
-        return this._send('init');
+        const id = this.requestId++;
+        const workerPromise = new Promise((resolve, reject) => {
+            this.pendingPromises.set(id, { resolve, reject });
+            this.worker.postMessage({ id, type: 'init' });
+        });
+        
+        const timeoutPromise = new Promise((resolve) => {
+            setTimeout(() => {
+                this.pendingPromises.delete(id);
+                this.degraded = true;
+                console.warn('[Transformers Engine] Init timed out after 30s. Gracefully degrading to keyword matching.');
+                resolve(false);
+            }, 30000);
+        });
+        
+        return Promise.race([workerPromise, timeoutPromise]);
     },
 
     _send(type, data = {}) {
+        if (this.degraded) return Promise.reject(new Error("Engine is degraded"));
         const id = this.requestId++;
-        return new Promise((resolve, reject) => {
+        const workerPromise = new Promise((resolve, reject) => {
             this.pendingPromises.set(id, { resolve, reject });
             this.worker.postMessage({ id, type, data });
         });
+        const timeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => {
+                this.pendingPromises.delete(id);
+                reject(new Error(`Worker ${type} timed out`));
+            }, window.CONFIG?.WORKER_TIMEOUT_MS || 10000);
+        });
+        return Promise.race([workerPromise, timeoutPromise]);
     },
 
-    async getEmbedding(text) {
-        if (!this.worker) {
-            await this.init();
+    async getEmbedding(text, isResume = false) {
+        if (this.degraded) return null;
+        if (isResume && this._resumeCache.text === text && this._resumeCache.vector) {
+            return this._resumeCache.vector;
         }
-        return this._send('embed', { text });
+        
+        if (!this.worker || !this.isInitialized) {
+            const ok = await this.init();
+            if (!ok || this.degraded) return null;
+        }
+        
+        try {
+            const vector = await this._send('embed', { text });
+            if (isResume && vector) {
+                this._resumeCache.text = text;
+                this._resumeCache.vector = vector;
+            }
+            return vector;
+        } catch (e) {
+            console.warn('[Transformers Engine] Embedding failed:', e);
+            return null;
+        }
     },
 
     calculateSimilarity(vecA, vecB) {

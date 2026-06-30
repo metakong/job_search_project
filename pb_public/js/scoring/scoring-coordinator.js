@@ -1,27 +1,7 @@
 // =====================================================================
 // Scoring Coordinator & Pipeline Orchestrator — scoring-coordinator.js
 // =====================================================================
-// Places every job on two candidate-relative axes and routes it into one of
-// four zones (plus the toxic Inferno override and a hidden "noise" floor):
-//
-//   • Delta-X  (FIT, 0..1)   — how well the job matches the candidate, driven
-//                              primarily by the candidate's own résumé.
-//   • Delta-Y  (TRAJECTORY)  — jobSeniority − candidateSeniority (integer steps).
-//
-//   ZONES (definitions, faithful to project intent):
-//     STRIKE   — average risk/reward; well-aligned, roughly lateral move.
-//     MOONSHOT — high risk/reward; a reach UP you're only partly qualified for.
-//     SAFETY   — low risk/reward; a step DOWN you'd take in a tough market.
-//     INFERNO  — psychologically hazardous (toxicity override; a calibrated minority).
-//     noise    — genuinely irrelevant (below the relevance floor); hidden by default.
-//
-//   The Strategy Dial (1 Survival · 2 Balanced · 3 Aggressive) reshapes the
-//   thresholds: Survival widens the net and embraces step-downs; Aggressive
-//   demands high fit, pushes upward reaches into Moonshot, and hides mediocrity.
-//
-// Core Score (0..100) is a transparent blend: 55% fit, 25% pay-vs-floor,
-// 20% culture. No hidden constants.
-// =====================================================================
+// Orchestrates dynamic, probabilistic job scoring and forced distribution.
 
 (function () {
     'use strict';
@@ -37,51 +17,14 @@
     const WHITESPACE_RE = /\s+/g;
     const BODY_RE       = /<body[^>]*>([\s\S]*?)<\/body>/i;
 
-    // ── Core Score weights (sum to 1.0) ──────────────────────────────
-    const W_FIT = 0.55, W_PAY = 0.25, W_CULTURE = 0.20;
-
     // ── Seniority ladder ─────────────────────────────────────────────
     const SENIORITY_MAP = { director: 4, manager: 3, senior: 2, entry: 1, unspecified: 2 };
 
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-    // ── Zone thresholds per Strategy Dial setting ────────────────────
-    // floor: relevance floor below which an off-target job is hidden as noise.
-    // strikeFit: fit bar for a well-aligned lateral ("on target").
-    function thresholds(strategy) {
-        if (strategy === 1) return { floor: 0.10, strikeFit: 0.45 }; // Survival
-        if (strategy === 3) return { floor: 0.20, strikeFit: 0.50 }; // Aggressive
-        return { floor: 0.15, strikeFit: 0.55 };                     // Balanced
-    }
-
-    // Pure zone classifier (Inferno/blacklist handled by the caller). Zones are
-    // trajectory-led (a step UP is a reach → Moonshot; a step DOWN in-field is a
-    // fallback → Safety; lateral & relevant → Strike), with fit gating relevance.
-    function classifyZone(dx, dy, strategy) {
-        const { floor, strikeFit } = thresholds(strategy);
-
-        // Below the relevance floor and not a deliberate upward reach → hide.
-        if (dx < floor && dy < 2) return 'noise';
-
-        if (strategy === 3) { // Aggressive — emphasize reaches; keep only strong laterals/step-downs
-            if (dy >= 1) return 'moonshot';
-            if (dy === 0) return dx >= strikeFit ? 'strike' : 'noise';
-            return dx >= 0.65 ? 'safety' : 'noise';
-        }
-
-        // Survival (1) & Balanced (2)
-        if (dy >= 2) return 'moonshot';                                  // clear reach up
-        if (dy === 1) return dx >= strikeFit + 0.15 ? 'strike' : 'moonshot'; // near-promotion vs reach
-        if (dy <= -1) return 'safety';                                   // step down in-field (overqualified)
-        return 'strike';                                                 // relevant lateral
-    }
-
     const scoringCoordinator = {
-        // Expose for tooling/tests.
         SENIORITY_MAP,
-        classifyZone,
 
-        // ── Boilerplate scrubbing (for skill matching only) ──────────
         scrubBoilerplate(text) {
             if (!text) return '';
             let clean = text
@@ -95,7 +38,6 @@
             return clean.replace(HTML_TAG_RE, ' ').replace(WHITESPACE_RE, ' ').trim();
         },
 
-        // ── Location type ────────────────────────────────────────────
         classifyLocationType(desc, loc) {
             const combined = `${desc} ${loc}`.toLowerCase();
             if (/\bremote\b|work from home|fully distributed|\bwfh\b|100%\s*remote/i.test(combined)) return 'remote';
@@ -104,7 +46,6 @@
             return 'unknown';
         },
 
-        // ── Salary parsing ───────────────────────────────────────────
         parseSalary(desc) {
             const salAnnualRe = /\$\s*([\d,]+)\s*(?:k|K)?\s*(?:–|-|to)\s*\$\s*([\d,]+)\s*(?:k|K)?/i;
             const salHourlyRe = /\$\s*([\d.]+)\s*(?:per\s+hour|\/\s*hr|\/\s*hour|an hour|hourly)/i;
@@ -132,7 +73,6 @@
             return { min: 0.0, max: 0.0, parseable: false };
         },
 
-        // ── Recency multiplier / staleness ───────────────────────────
         getRecencyMultiplier(days, locationType) {
             const remoteLike = !(locationType === 'on_site' || locationType === 'hybrid');
             if (days <= 7)  return { mult: 1.0, isStale: false };
@@ -141,7 +81,6 @@
             return { mult: remoteLike ? 0.25 : 0.40, isStale: true };
         },
 
-        // ── Seniority detection ──────────────────────────────────────
         detectSeniority(title, desc) {
             const combined = `${title} ${(desc || '').substring(0, 300)}`.toLowerCase();
             if (/\bdirector\b|\bvp\b|vice president|head of|\bchief\b|\bc[etof]o\b/i.test(combined)) return 'director';
@@ -151,7 +90,6 @@
             return 'unspecified';
         },
 
-        // ── Apply type detection ─────────────────────────────────────
         detectApplyType(url, desc) {
             const u = (url || '').toLowerCase();
             if (u.includes('linkedin.com/jobs') || u.includes('indeed.com/viewjob') || /easy\s*apply|quick\s*apply|one.click\s*apply/i.test(desc || '')) return 'easy_apply';
@@ -160,20 +98,15 @@
             return 'unknown';
         },
 
-        // ── Ghost-job detection (conservative; a genuine minority) ────
-        // A ghost listing is one likely posted to farm résumés rather than to
-        // fill a real, current role: old + no pay + (perpetual-pipeline language
-        // OR an unusually thin description).
         detectGhostJob(descFull, scrubbed, days, salaryParseable) {
             if (salaryParseable) return false;
             const perpetual = /always (?:accepting|taking) applications|building a (?:pipeline|pool|bench) of (?:candidates|talent)|for future (?:opportunities|openings|consideration)|we(?:'re| are) always hiring/i.test(descFull);
             if (days >= 30 && perpetual) return true;
-            if (days >= 30 && scrubbed.length < 350) return true;   // old + thin + no pay
-            if (days >= 60) return true;                            // very stale + no pay
+            if (days >= 30 && scrubbed.length < 350) return true;
+            if (days >= 60) return true;
             return false;
         },
 
-        // ── Build candidate keyword profile (résumé first, queries fallback) ──
         buildProfileKeywords(userProfile) {
             const resume = (userProfile && userProfile.resumeText) || '';
             if (resume.trim().length > 50) return window.skillMatcher.extractKeywords(resume, 60);
@@ -182,22 +115,62 @@
             return blob.trim() ? window.skillMatcher.extractKeywords(blob, 40) : [];
         },
 
-        // ── Main pipeline: score + classify a single job ─────────────
+        _payFitScore(job, profile) {
+            const sal = job.salary_mid || 0;
+            if (sal === 0 && !job.salary_parseable) return null; // Null if no salary data
+            const floor = (profile && profile.salaryFloor) ? profile.salaryFloor : 40000;
+            if (sal < floor * 0.8) return 15;
+            if (sal < floor) return 40;
+            if (sal <= floor * 1.5) return 85;
+            return 100;
+        },
+
+        _adaptiveCoreScore(fitPercent, payScore, cultureScore, ambiguityIndex) {
+            const AI = ambiguityIndex || 0;
+            let w_fit = 0.55 * (1 - 0.3 * AI);
+            let w_pay = 0.25;
+            let w_culture = 0.20 + 0.165 * AI;
+            
+            // Missing salary: redistribute proportionally
+            if (payScore === null) {
+                const total = w_fit + w_culture;
+                w_fit = w_fit / total;
+                w_culture = w_culture / total;
+                w_pay = 0;
+            }
+            
+            if (cultureScore === null) {
+                if (payScore === null) {
+                    w_fit = 1;
+                    w_culture = 0;
+                    w_pay = 0;
+                } else {
+                    const total = w_fit + w_pay;
+                    w_fit = w_fit / total;
+                    w_pay = w_pay / total;
+                    w_culture = 0;
+                }
+            }
+            
+            return Math.round(
+                100 * (w_fit * fitPercent + w_pay * ((payScore || 0) / 100) + w_culture * (cultureScore || 0))
+            );
+        },
+
         scoreAndClassifyJob(job, userProfile, blacklistNames = [], profileKeywords = null) {
             const descFull = job.description_full || job.description || '';
             const title    = job.title || '';
-            const strategy = parseInt((userProfile && userProfile.strategyDial) || 2, 10) || 2;
             if (profileKeywords === null) profileKeywords = this.buildProfileKeywords(userProfile || {});
-
-            // 0. Blacklist → hidden noise.
+            
+            // 0. Blacklist
             const companyClean = (job.company_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             let isBlacklisted = false;
             for (const name of blacklistNames) {
                 const b = String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                 if (b && companyClean && (companyClean.includes(b) || b.includes(companyClean))) { isBlacklisted = true; break; }
             }
-
-            // 1. Structured signals.
+            
+            // 1. Structured signals
             const computedLoc = this.classifyLocationType(descFull, job.job_location || '');
             job.location_type = (job.location_type === 'remote') ? 'remote' : computedLoc;
 
@@ -210,7 +183,7 @@
 
             const scrubbed = this.scrubBoilerplate(descFull);
             job.seniority_level = this.detectSeniority(title, descFull);
-            job.industry = window.industryClassifier.classify(descFull);
+            if (window.industryClassifier) job.industry = window.industryClassifier.classify(descFull);
             job.apply_type = this.detectApplyType(job.apply_url, descFull);
 
             const days = Number.isFinite(job.days_since_posted) ? job.days_since_posted : 0;
@@ -219,43 +192,61 @@
             job.is_stale = rec.isStale;
             job.is_ghost_job = this.detectGhostJob(descFull, scrubbed, days, sal.parseable);
 
-            // 2. Fit (Delta-X): résumé-driven overlap + supplementary skills + optional semantics.
-            const builtin     = window.skillMatcher.match(scrubbed, title);
-            const builtinNorm = Math.min(1, builtin / 12);
-            const overlap     = window.skillMatcher.overlapRatio(scrubbed, profileKeywords);
-            const sem = (typeof job.semantic_similarity === 'number') ? job.semantic_similarity : null;
-            let deltaX;
-            if (sem !== null && profileKeywords.length) deltaX = 0.50 * sem + 0.35 * overlap + 0.15 * builtinNorm;
-            else if (profileKeywords.length)            deltaX = 0.70 * overlap + 0.30 * builtinNorm;
-            else                                         deltaX = builtinNorm;
+            // Phase 1 - Individual Scoring
+            
+            // 1. ambiguity_index
+            const ai = window.ambiguityIndex ? window.ambiguityIndex.compute(descFull) : 0;
+            job.ambiguity_index = ai;
+            
+            // 2. skill_overlap
+            let deltaX = 0;
+            if (window.skillMatcher) {
+                const builtin = window.skillMatcher.match(scrubbed, title);
+                const builtinNorm = Math.min(1, builtin / 12);
+                job.skill_match_score = builtin;
+                
+                const softSkills = (userProfile && userProfile.softSkills) ? userProfile.softSkills : [];
+                const hardOverlap = window.skillMatcher.computeATSScore(scrubbed, profileKeywords);
+                job.ats_alignment_score = Math.round(hardOverlap * 100);
+                
+                const overlap = window.skillMatcher.computeWeightedOverlap(profileKeywords, softSkills, scrubbed, ai);
+                job.overlap_ratio = overlap; // Save for friction calculation
+                
+                const sem = (typeof job.semantic_similarity === 'number') ? job.semantic_similarity : null;
+                if (sem !== null && profileKeywords.length) deltaX = 0.50 * sem + 0.35 * overlap + 0.15 * builtinNorm;
+                else if (profileKeywords.length)            deltaX = 0.70 * overlap + 0.30 * builtinNorm;
+                else                                         deltaX = builtinNorm;
+            }
             deltaX = clamp(deltaX, 0, 1);
-            job.skill_match_score = builtin;
-            job.ats_alignment_score = Math.round(overlap * 100);
             job.delta_x = deltaX;
             job.fit_score = Math.round(deltaX * 100);
-
-            // 3. Trajectory (Delta-Y).
-            const jobSen  = SENIORITY_MAP[job.seniority_level] || 2;
-            const userSen = (userProfile && userProfile.baselineSeniority) || 2;
-            const deltaY = jobSen - userSen;
-            job.delta_y = deltaY;
-
-            // 4. Pay & culture vectors.
-            const floor = (userProfile && userProfile.salaryFloor) || 0;
-            let vE = 0.5;
-            if (salaryMid > 0 && floor > 0) vE = clamp(salaryMid / floor, 0, 1.3);
-            const cult = window.cultureEvaluator.evaluate(descFull);
-            const vP = cult.cultureScore;
-            job.culture_score = Math.round(vP * 100);
-
-            // 5. Core Score (transparent blend).
-            job.match_score = Math.round(100 * (W_FIT * deltaX + W_PAY * Math.min(1, vE) + W_CULTURE * vP));
-
-            // 6. Toxicity → Inferno override.
-            const evalData = window.eligibilityEvaluator.evaluateJob(job);
+            
+            // 3. culture_score
+            const cult = window.cultureEvaluator ? window.cultureEvaluator.evaluate(descFull) : { cultureScore: null };
+            job.culture_score = cult.cultureScore !== null ? Math.round(cult.cultureScore * 100) : null;
+            
+            // 4. toxicity
+            const evalData = window.eligibilityEvaluator ? window.eligibilityEvaluator.evaluateJob(job) : { toxicityScore: 0, isInferno: false };
             job.toxicity_score = evalData.toxicityScore;
             job.toxicity_signals = evalData.signals;
-
+            
+            // 5. pay_score
+            const payScore = this._payFitScore(job, userProfile);
+            
+            // 6. core_score
+            job.match_score = this._adaptiveCoreScore(deltaX, payScore, cult.cultureScore, ai);
+            
+            // 7/8. trajectory
+            const jobSen = SENIORITY_MAP[job.seniority_level] || 2;
+            const peakSen = (userProfile && userProfile.peakSeniority) || 2;
+            const recentSen = (userProfile && userProfile.recentSeniority) || peakSen;
+            job.trajectory_peak = jobSen - peakSen;
+            job.trajectory_recent = jobSen - recentSen;
+            
+            // 9. transition_friction
+            if (window.transitionFriction) job.transition_friction = window.transitionFriction.compute(job, userProfile || {});
+            
+            // Eligibility & overrides
             job.is_eligible = !isBlacklisted;
             if (isBlacklisted) {
                 job.computed_zone = 'noise';
@@ -263,20 +254,12 @@
                 return job;
             }
             job.discard_reason = null;
-
-            if (evalData.isInferno) {
-                job.computed_zone = 'inferno';
-                job.inferno_circle = evalData.infernoCircle;
-                return job;
-            }
-            job.inferno_circle = null;
-
-            // 7. Zone routing.
-            job.computed_zone = classifyZone(deltaX, deltaY, strategy);
+            
+            job.computed_zone = 'pending';
+            
             return job;
         },
 
-        // ── Flag near-duplicate listings across boards (keep the first) ──
         flagDuplicates(jobs) {
             const seen = new Set();
             for (const job of jobs) {
@@ -287,29 +270,109 @@
             return jobs;
         },
 
-        // ── Global percentiles + tier labels over the full eligible set ──
-        // Zones are assigned by scoreAndClassifyJob; this only ranks matches.
-        recalculatePercentiles(jobsList) {
-            const RANKED = new Set(['strike', 'moonshot', 'safety']);
-            const ranked = jobsList.filter(j => j.is_eligible !== false && RANKED.has(j.computed_zone));
-            const scores = Array.from(new Set(ranked.map(j => j.match_score || 0))).sort((a, b) => a - b);
-            const scoreToPct = {};
-            scores.forEach((s, i) => { scoreToPct[s] = scores.length > 1 ? Math.round((i / (scores.length - 1)) * 100) : 100; });
-
-            for (const j of jobsList) {
-                if (j.is_eligible !== false && RANKED.has(j.computed_zone)) {
-                    const pct = scoreToPct[j.match_score || 0] ?? 100;
-                    j.match_percentile = pct;
-                    j.target_status = pct >= 80 ? 'Tier 1 / Top Match'
-                                    : pct >= 50 ? 'Tier 2 / Strong Match'
-                                    : pct >= 20 ? 'Tier 3 / Moderate Match'
-                                    : 'Tier 4 / Low Match';
-                } else {
-                    j.match_percentile = null;
-                    j.target_status = j.computed_zone === 'inferno' ? 'Inferno'
-                                    : j.computed_zone === 'noise' ? 'Filtered' : 'Pending';
+        // Phase 2 - Distribution
+        distributeAndRank(jobsList, userProfile) {
+            const config = window.APP_CONFIG || {};
+            // Using 75 as instructed for MIN_TOXICITY_FLOOR (since it's a 0-100 scale)
+            const MIN_TOXICITY_FLOOR = config.MIN_TOXICITY_FLOOR || 75; 
+            const INFERNO_PERCENTILE = config.INFERNO_PERCENTILE || 84;
+            
+            const eligibleJobs = jobsList.filter(j => j.is_eligible !== false);
+            
+            // 1. INFERNO PURGE
+            eligibleJobs.sort((a, b) => (b.toxicity_score || 0) - (a.toxicity_score || 0));
+            const p84Index = Math.floor(eligibleJobs.length * (1 - (INFERNO_PERCENTILE / 100)));
+            const p84 = eligibleJobs.length > 0 && p84Index >= 0 && p84Index < eligibleJobs.length 
+                ? (eligibleJobs[p84Index].toxicity_score || 0) : 0;
+            
+            const infernoCutoff = Math.max(p84, MIN_TOXICITY_FLOOR);
+            
+            for (const j of eligibleJobs) {
+                if ((j.toxicity_score || 0) > infernoCutoff) {
+                    j.computed_zone = 'inferno';
                 }
             }
+            
+            const cleanPool = eligibleJobs.filter(j => j.computed_zone !== 'inferno');
+            
+            // 2. NOISE FILTER
+            let sumDx = 0;
+            for (const j of cleanPool) sumDx += (j.delta_x || 0);
+            const meanDx = cleanPool.length > 0 ? sumDx / cleanPool.length : 0;
+            
+            let sumSqDx = 0;
+            for (const j of cleanPool) sumSqDx += Math.pow((j.delta_x || 0) - meanDx, 2);
+            const stdDx = cleanPool.length > 0 ? Math.sqrt(sumSqDx / cleanPool.length) : 0;
+            
+            const noiseFloor = Math.max(0.05, meanDx - 2 * stdDx);
+            
+            for (const j of cleanPool) {
+                if ((j.delta_x || 0) < noiseFloor) {
+                    j.computed_zone = 'noise';
+                }
+            }
+            
+            const distroPool = cleanPool.filter(j => j.computed_zone !== 'noise');
+            
+            // 3. FORCED PERCENTILE SPLIT
+            distroPool.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
+            
+            // Compute percentiles for display
+            const scores = Array.from(new Set(distroPool.map(j => j.match_score || 0))).sort((a, b) => a - b);
+            const scoreToPct = {};
+            scores.forEach((s, i) => { scoreToPct[s] = scores.length > 1 ? Math.round((i / (scores.length - 1)) * 100) : 100; });
+            
+            const third = Math.floor(distroPool.length / 3);
+            
+            distroPool.forEach((j, index) => {
+                const pct = scoreToPct[j.match_score || 0] ?? 100;
+                j.match_percentile = pct;
+                j.zone_rank = index; // Keep sorting order
+                
+                if (distroPool.length < (config.MIN_CLEAN_POOL_FOR_DISTRIBUTION || 9)) {
+                    // Fallback to absolute thresholds if pool is too small
+                    if (j.delta_x >= 0.55 && j.match_score >= 70) j.computed_zone = 'strike';
+                    else if (j.delta_x >= 0.40) j.computed_zone = 'moonshot';
+                    else j.computed_zone = 'safety';
+                } else {
+                    if (index < third) j.computed_zone = 'strike';
+                    else if (index < 2 * third) j.computed_zone = 'moonshot';
+                    else j.computed_zone = 'safety';
+                }
+                
+                // 4. TRAJECTORY OVERRIDE
+                if (j.trajectory_peak >= -0.5 && j.trajectory_peak <= 0.5 && j.trajectory_recent >= 1) {
+                    j.computed_zone = 'moonshot';
+                }
+                if (j.trajectory_peak <= -2) {
+                    j.computed_zone = 'safety';
+                }
+            });
+            
+            // 5. STRATEGY TIERS (within zones)
+            const zones = ['strike', 'moonshot', 'safety'];
+            for (const z of zones) {
+                const zoneJobs = distroPool.filter(j => j.computed_zone === z);
+                // Sort by friction ascending (lowest friction = tier 1)
+                zoneJobs.sort((a, b) => (a.transition_friction || 0) - (b.transition_friction || 0));
+                
+                const zThird = Math.floor(zoneJobs.length / 3);
+                zoneJobs.forEach((j, index) => {
+                    if (index < zThird) j.strategy_tier = 1; // Survival (easiest)
+                    else if (index < 2 * zThird) j.strategy_tier = 2; // Balanced
+                    else j.strategy_tier = 3; // Aggressive
+                });
+            }
+
+            // Clean up titles
+            for (const j of jobsList) {
+                if (j.computed_zone === 'strike') j.target_status = 'Tier 1 / Top Match';
+                else if (j.computed_zone === 'moonshot') j.target_status = 'Tier 2 / Strong Match';
+                else if (j.computed_zone === 'safety') j.target_status = 'Tier 3 / Moderate Match';
+                else if (j.computed_zone === 'inferno') j.target_status = 'Inferno';
+                else j.target_status = 'Filtered';
+            }
+            
             return jobsList;
         }
     };

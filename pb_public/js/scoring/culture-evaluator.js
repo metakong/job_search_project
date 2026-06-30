@@ -48,7 +48,7 @@
         // Returns { cultureScore: 0..1, greenFlags: [], yellowFlags: [] }.
         evaluate(text) {
             const desc = (text || '').toString();
-            if (!desc.trim()) return { cultureScore: 0.5, greenFlags: [], yellowFlags: [] };
+            if (!desc.trim()) return { cultureScore: null, greenFlags: [], yellowFlags: [] };
 
             let score = 0.5; // neutral baseline
             const greenFlags = [];

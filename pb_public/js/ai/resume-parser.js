@@ -8,6 +8,13 @@
 (function () {
     'use strict';
 
+    const SOFT_SKILLS_LEXICON = [
+        "leadership", "communication", "adaptability", "problem solving", "critical thinking",
+        "teamwork", "collaboration", "time management", "organization", "emotional intelligence",
+        "creativity", "conflict resolution", "negotiation", "empathy", "mentoring", "coaching",
+        "agile", "scrum", "kanban", "lean six sigma", "okr"
+    ];
+
     const resumeParser = {
         async parsePDF(file) {
             if (typeof pdfjsLib === 'undefined') {
@@ -34,19 +41,37 @@
             });
         },
 
+        _detectSeniority(text) {
+            const t = (text || '').toLowerCase();
+            let sen = 2;
+            if (/\bdirector\b|\bvp\b|vice president|\bfounder\b|\bchief\b|\bhead of\b/i.test(t)) sen = 4;
+            else if (/\bmanager\b|\blead\b|\bsupervisor\b|\bprincipal\b/i.test(t)) sen = 3;
+            else if (/\bsenior\b|\bsr\.?\b|\bstaff\b/i.test(t)) sen = 2;
+            else if (/\bcoordinator\b|\bspecialist\b|\brepresentative\b|\bassociate\b|\bjunior\b|\bintern\b/i.test(t)) sen = 1;
+            return sen;
+        },
+
         // Derive baseline seniority (1–4) and a salary-floor anchor from résumé text.
         calibrateFromText(text, currentFloor = 40000) {
             const t = (text || '').toLowerCase();
-            let baselineSeniority = 2;
-            if (/\bdirector\b|\bvp\b|vice president|\bfounder\b|\bchief\b|\bhead of\b/i.test(t)) baselineSeniority = 4;
-            else if (/\bmanager\b|\blead\b|\bsupervisor\b|\bprincipal\b/i.test(t)) baselineSeniority = 3;
-            else if (/\bsenior\b|\bsr\.?\b|\bstaff\b/i.test(t)) baselineSeniority = 2;
-            else if (/\bcoordinator\b|\bspecialist\b|\brepresentative\b|\bassociate\b|\bjunior\b|\bintern\b/i.test(t)) baselineSeniority = 1;
+            
+            const peakSeniority = this._detectSeniority(t);
+            let recentSeniority = peakSeniority;
+            
+            const yearRe = /\b(202[1-9])\b/g;
+            let lastYearIndex = -1;
+            let m;
+            while ((m = yearRe.exec(t)) !== null) {
+                lastYearIndex = m.index;
+            }
+            if (lastYearIndex !== -1) {
+                const recentText = t.substring(lastYearIndex, lastYearIndex + 500);
+                recentSeniority = this._detectSeniority(recentText);
+            }
 
             let salaryFloor = currentFloor || 40000;
             const re = /\$\s*([\d,]+)\s*(?:k|K)?\b/g;
             const found = [];
-            let m;
             while ((m = re.exec(text || '')) !== null) {
                 let val = parseFloat(m[1].replace(/,/g, ''));
                 if (val < 1000 && m[0].toLowerCase().includes('k')) val *= 1000;
@@ -54,8 +79,13 @@
                 if (val >= 20000 && val <= 400000) found.push(val);
             }
             if (found.length) salaryFloor = Math.min(...found);
+            
+            const softSkills = [];
+            for (const skill of SOFT_SKILLS_LEXICON) {
+                if (t.includes(skill)) softSkills.push(skill);
+            }
 
-            return { baselineSeniority, salaryFloor };
+            return { peakSeniority, recentSeniority, salaryFloor, softSkills };
         },
 
         // Persist résumé text + calibration in one shot (kept for any direct caller).
@@ -65,10 +95,13 @@
             const cal = this.calibrateFromText(text, profile.salaryFloor);
             await window.dbAdapter.saveUserProfile({
                 resumeText: text,
-                baselineSeniority: cal.baselineSeniority,
-                salaryFloor: cal.salaryFloor
+                baselineSeniority: cal.peakSeniority,
+                peakSeniority: cal.peakSeniority,
+                recentSeniority: cal.recentSeniority,
+                salaryFloor: cal.salaryFloor,
+                softSkills: cal.softSkills
             });
-            console.log(`[Resume Parser] Saved. Seniority=${cal.baselineSeniority}, Floor=${cal.salaryFloor}`);
+            console.log(`[Resume Parser] Saved. Peak=${cal.peakSeniority}, Recent=${cal.recentSeniority}, Floor=${cal.salaryFloor}`);
             return true;
         }
     };

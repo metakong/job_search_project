@@ -8,6 +8,10 @@
 // =====================================================================
 
 // ── State ─────────────────────────────────────────────────────────────
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+const updateLoadingText = (text) => { if (loader) loader.querySelector('span').textContent = text; };
+
+let isScraping         = false;
 let allJobsCache       = [];     // full listing snapshot (source of truth for the view)
 let jobListings        = [];     // current rendered page(s)
 let currentPage        = 1;
@@ -112,6 +116,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await loadAllJobs();
     fetchData(1, false);
+
+    if (localStorage.getItem('requires_rescore_v13') === 'true') {
+        localStorage.removeItem('requires_rescore_v13');
+        runBackgroundRescore();
+    }
 });
 
 // ── In-memory cache ─────────────────────────────────────────────────────
@@ -123,11 +132,13 @@ async function loadAllJobs() {
 // Direct In-Browser Ingestion Sweep
 // =====================================================================
 async function runIngestionSweep() {
+    if (isScraping) return;
+    isScraping = true;
     try {
         ingestSweepBtn.disabled = true;
         ingestSweepBtn.textContent = '⏳ Scraping…';
         loader.style.display = 'flex';
-        loader.querySelector('span').textContent = 'Ingesting direct RSS & API streams…';
+        updateLoadingText('Ingesting direct RSS & API streams…');
 
         const profile = await window.dbAdapter.getUserProfile();
         const queries = (profile.search_queries && profile.search_queries.length > 0)
@@ -136,19 +147,28 @@ async function runIngestionSweep() {
 
         let rawJobs = [];
 
-        // 1. Indeed RSS (one request set per atomic query string).
+        // Fetch sequentially to prevent proxy overloading
         for (const query of queries) {
-            try { rawJobs.push(...await window.rssAdapter.fetchJobs(query, location)); }
+            updateLoadingText(`Fetching jobs for: ${query}...`);
+            
+            // 1. Fetch RSS
+            try { 
+                const rssJobs = await window.rssAdapter.fetchJobs(query, location);
+                rawJobs.push(...rssJobs);
+            }
             catch (err) { console.error(`[Ingest] Indeed RSS "${query}" failed:`, err); }
+            await sleep(1000); // 1-second throttle
+            
+            // 2. Fetch Remotive
+            try { 
+                const remotiveJobs = await window.remotiveApi.fetchJobs([query]);
+                rawJobs.push(...remotiveJobs);
+            } 
+            catch (err) { console.error(`[Ingest] Remotive "${query}" failed:`, err); }
+            await sleep(1000); // 1-second throttle
         }
 
-        // 2. Remotive — driven by the candidate's own categories, not hardcoded.
-        try {
-            const remotiveQueries = (profile.search_queries && profile.search_queries.length)
-                ? profile.search_queries.slice(0, 4) : ['sales', 'operations'];
-            rawJobs.push(...await window.remotiveApi.fetchJobs(remotiveQueries));
-        } catch (err) { console.error('[Ingest] Remotive failed:', err); }
-
+        updateLoadingText('Polling ATS watchlists…');
         // 3. ATS direct watchlists (Greenhouse / Lever) + optional sitemap careers pages.
         try { rawJobs.push(...await pollWatchlist()); }
         catch (err) { console.error('[Ingest] Watchlist poll failed:', err); }
@@ -156,7 +176,7 @@ async function runIngestionSweep() {
         console.log(`[Ingest] Collected ${rawJobs.length} raw postings.`);
 
         // 4. Score & classify.
-        loader.querySelector('span').textContent = 'Scoring and classifying targets…';
+        updateLoadingText('Scoring and classifying targets…');
         const keywords = window.scoringCoordinator.buildProfileKeywords(profile);
         const blacklistNames = await window.dbAdapter.getBlacklistNames();
 
@@ -171,7 +191,7 @@ async function runIngestionSweep() {
         window.scoringCoordinator.flagDuplicates(scored);
 
         // 5. Persist new listings, then recompute global percentiles across the whole DB.
-        loader.querySelector('span').textContent = 'Saving results to local database…';
+        updateLoadingText('Saving results to local database…');
         const { newInserts, duplicates } = await window.dbAdapter.saveJobsBulk(scored);
         await loadAllJobs();
         window.scoringCoordinator.recalculatePercentiles(allJobsCache);
@@ -184,12 +204,14 @@ async function runIngestionSweep() {
         alert(`Sweep complete! ${newInserts} new listings added, ${duplicates} duplicates skipped.`);
         fetchData(1, false);
     } catch (err) {
-        console.error('[Ingest] Core extraction failure:', err);
-        alert(`Ingest sweep failed: ${err.message}`);
+        console.error('[Ingest] Core extraction failure:', err.stack || err);
+        alert(`Ingest sweep partial failure: ${err.message}`);
     } finally {
+        isScraping = false;
         ingestSweepBtn.disabled = false;
         ingestSweepBtn.textContent = '↻ Ingest Sweep';
         loader.style.display = 'none';
+        updateLoadingText('Loading…');
     }
 }
 
@@ -265,7 +287,8 @@ async function fetchData(page = 1, append = false) {
             appStatus: appStatusFilter.value, location: locationFilter.value,
             recencyDays: currentRecencyDays, industry: industryFilter.value,
             salaryMin: salaryMin.value, salaryMax: salaryMax.value,
-            hideGhost: hideGhostJobs.checked, zone: currentActiveZone
+            hideGhost: hideGhostJobs.checked, zone: currentActiveZone,
+            strategy_tier: parseInt(strategyDial?.value || 2)
         };
 
         const result = await window.dbAdapter.getJobs(filters, page, 50, allJobsCache);
@@ -350,6 +373,7 @@ function renderCards() {
 
     jobListings.forEach(job => {
         const card = document.createElement('div');
+        card.id = 'job-card-' + job.id;
         const isInferno = job.computed_zone === 'inferno';
         card.className = `job-card ${getTierCardClass(job.target_status)} ${job.is_stale ? 'card-stale' : ''} ${isInferno ? 'inferno-card' : ''}`;
 
@@ -551,7 +575,12 @@ async function saveModalStatus() {
         if (cached) cached.application_status = newStatus;
         const shown = jobListings.find(j => j.id === currentModalJobId);
         if (shown) shown.application_status = newStatus;
-        renderCards();
+        
+        const card = document.getElementById('job-card-' + currentModalJobId);
+        if (card && shown) {
+            const pillRow = card.querySelector('.pill-row');
+            if (pillRow) pillRow.innerHTML = buildPillRow(shown);
+        }
     } catch (err) {
         console.error('Status save error:', err);
         modalSaveStatusBtn.textContent = 'Error';
@@ -679,35 +708,69 @@ async function quickBlacklist(companyName) {
 }
 
 // =====================================================================
-// Strategy Dial — full re-score (the ONLY place zones change)
+// Strategy Dial — UI Filter (Exclusive Slicing)
 // =====================================================================
 let strategyDebounce;
 async function onStrategyChange(val) {
     if (strategyLabel) strategyLabel.textContent = { 1: 'Survival', 2: 'Balanced', 3: 'Aggressive' }[val] || 'Balanced';
     await window.dbAdapter.saveUserProfile({ strategyDial: val });
     clearTimeout(strategyDebounce);
-    strategyDebounce = setTimeout(async () => {
-        try {
-            loader.style.display = 'flex';
-            loader.querySelector('span').textContent = 'Re-scoring with new strategy…';
-            const profile = await window.dbAdapter.getUserProfile();
-            const keywords = window.scoringCoordinator.buildProfileKeywords(profile);
-            const blacklistNames = await window.dbAdapter.getBlacklistNames();
-            const all = await window.dbAdapter.getAllJobs();
-            for (const job of all) {
+    strategyDebounce = setTimeout(() => {
+        // Just re-render. dbAdapter handles the exclusive filtering based on strategy_tier.
+        fetchData(1, false);
+    }, 150);
+}
+
+// =====================================================================
+// Background Re-score (Triggered on Schema Migration)
+// =====================================================================
+async function runBackgroundRescore() {
+    try {
+        console.log('[App] Starting v13 background rescore...');
+        const toast = document.createElement('div');
+        toast.className = 'migration-toast';
+        toast.innerHTML = '⚙️ Upgrading scoring engine... your jobs are being re-evaluated.';
+        toast.style.cssText = 'position:fixed; bottom:20px; right:20px; background:var(--color-tier2); color:#fff; padding:12px 20px; border-radius:8px; z-index:9999; box-shadow:0 4px 12px rgba(0,0,0,0.5); font-weight:600; font-size:0.9rem; transition: opacity 0.5s;';
+        document.body.appendChild(toast);
+
+        // Put grid in pending state
+        document.querySelectorAll('.job-card').forEach(c => c.classList.add('card--pending'));
+        
+        await sleep(100);
+
+        const profile = await window.dbAdapter.getUserProfile();
+        const keywords = window.scoringCoordinator.buildProfileKeywords(profile);
+        const blacklistNames = await window.dbAdapter.getBlacklistNames();
+        const all = allJobsCache.length > 0 ? allJobsCache : await window.dbAdapter.getAllJobs();
+
+        // Chunked processing to avoid blocking main thread
+        const chunkSize = window.CONFIG?.SCORING_CHUNK_SIZE || 25;
+        for (let i = 0; i < all.length; i += chunkSize) {
+            const chunk = all.slice(i, i + chunkSize);
+            for (const job of chunk) {
                 try { window.scoringCoordinator.scoreAndClassifyJob(job, profile, blacklistNames, keywords); }
-                catch (e) { console.error('Re-score failed for', job.title, e); }
+                catch (e) { console.error('Background re-score failed for', job.title, e); }
             }
-            window.scoringCoordinator.recalculatePercentiles(all);
-            await window.dbAdapter.persistJobs(all);
-            allJobsCache = all;
-            fetchData(1, false);
-        } catch (err) {
-            console.error('Strategy re-score failed:', err);
-        } finally {
-            loader.style.display = 'none';
+            // Yield to main thread
+            await sleep(10);
         }
-    }, 350);
+
+        window.scoringCoordinator.recalculatePercentiles(all);
+        await window.dbAdapter.persistJobs(all);
+        allJobsCache = all;
+        
+        toast.innerHTML = '✅ Scoring upgrade complete.';
+        toast.style.background = 'var(--color-tier1)';
+        
+        setTimeout(() => {
+            toast.style.opacity = '0';
+            setTimeout(() => toast.remove(), 500);
+        }, 3000);
+
+        fetchData(1, false);
+    } catch (err) {
+        console.error('Background rescore failed:', err);
+    }
 }
 
 // =====================================================================
