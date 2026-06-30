@@ -29,7 +29,9 @@ From those, each job lands in one zone:
 | 🎯 **Strike Zone** | Average risk/reward. Well-aligned, roughly lateral — the roles you're a strong, natural fit for. |
 | 🚀 **Moonshots** | High risk/reward. A reach *up* you're only partly qualified for. |
 | 🛡️ **Safety Net** | Low risk/reward. A step *down* in your field — the fallback you'd take in a tough market. |
-| 🔥 **Dante's Inferno** | Psychologically hazardous postings (scams, exploitation, toxic culture). A calibrated *minority*, never the default pile. |
+| 🔥 **Dante's Inferno** | Psychologically hazardous postings (scams, exploitation, toxic culture). A calibrated *minority* (hard-capped at 40% of any batch), never the default pile. |
+
+Zones are assigned by those **two axes** — not by forced score quotas. An **absolute fit floor** gates the Strike Zone and Moonshots, so a starved or off-target feed can never promote "the best of the worst" into your top matches; genuinely irrelevant roles are hidden as noise. If a feed is so thin that *nothing* clears the bar, the whole pool shows honestly in the Safety Net rather than leaving you a blank screen.
 
 ### The Job Hunt Strategy Dial
 
@@ -39,7 +41,7 @@ A 3-step dial reshapes your feed using an exclusive tiering system based on Tran
 - **Balanced** — The default. Reveals a balanced slice of the market.
 - **Aggressive** — Reveals jobs with higher transition friction (reaches, pivots, and stretch roles).
 
-Changing the dial instantly filters your feed to reveal ONLY that distinct subset of jobs, without requiring a full database re-score.
+Changing the dial instantly filters your feed to reveal ONLY that distinct subset of jobs, without requiring a full database re-score. Two guardrails keep it sensible: when a zone has too few jobs to slice meaningfully, the dial steps aside and shows the whole bucket (no empty screens); and in **Dante's Inferno** the dial reads *N/A — Hazard View* and is disabled, since "career strategy" has no meaning for a list of postings to avoid.
 
 ---
 
@@ -100,9 +102,9 @@ Nothing else — your résumé, your scores, your tracked applications — ever 
 
 ```
 ┌───────────────────────────────────────────────┐
-│  EXTRACTORS (browser, via CORS proxy)          │
-│  rss-adapter · remotive-api · sitemap-parser   │
-│  + Greenhouse/Lever ATS watchlists             │
+│  EXTRACTORS (browser, direct → CORS proxy)     │
+│  rss-adapter · remotive-api · themuse-api      │
+│  · sitemap-parser + Greenhouse/Lever ATS       │
 └───────────────────────┬───────────────────────┘
                         ▼  raw listings
 ┌───────────────────────────────────────────────┐
@@ -136,7 +138,7 @@ pb_public/                 # ← Serve this directory (static web root)
     ├── config.js
     ├── utils/fetch.js                 # CORS-aware fetch + SHA-256 hashing
     ├── storage/                       # local-db, db-adapter, data-portability
-    ├── extractors/                    # rss-adapter, remotive-api, sitemap-parser
+    ├── extractors/                    # rss-adapter, remotive-api, themuse-api, sitemap-parser
     ├── ai/                            # resume-parser, transformers-engine (opt-in)
     ├── workers/semantic-worker.js     # embedding worker (opt-in)
     ├── scoring/                       # evaluator, skill-matcher, culture-evaluator,

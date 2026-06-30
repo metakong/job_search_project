@@ -109,10 +109,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Sync the dial UI to the stored strategy.
     const profile = await window.dbAdapter.getUserProfile();
-    if (strategyDial && profile && profile.strategyDial) {
-        strategyDial.value = profile.strategyDial;
-        if (strategyLabel) strategyLabel.textContent = { 1: 'Survival', 2: 'Balanced', 3: 'Aggressive' }[profile.strategyDial] || 'Balanced';
-    }
+    if (strategyDial && profile && profile.strategyDial) strategyDial.value = profile.strategyDial;
+    updateStrategyDialState();
 
     await loadAllJobs();
     fetchData(1, false);
@@ -168,8 +166,18 @@ async function runIngestionSweep() {
             await sleep(1000); // 1-second throttle
         }
 
+        // 3. The Muse — key-free, US-centric, seniority-aware. Fetched once (it
+        // filters by location/category, not keyword), so localized business roles
+        // survive even when Indeed RSS is WAF-blocked.
+        updateLoadingText('Querying The Muse (localized roles)…');
+        try {
+            const museCategories = mapToMuseCategories(profile.categories || []);
+            const museJobs = await window.themuseApi.fetchJobs(location, museCategories, 2, profile.museApiKey || '');
+            rawJobs.push(...museJobs);
+        } catch (err) { console.error('[Ingest] The Muse failed:', err); }
+
         updateLoadingText('Polling ATS watchlists…');
-        // 3. ATS direct watchlists (Greenhouse / Lever) + optional sitemap careers pages.
+        // 4. ATS direct watchlists (Greenhouse / Lever) + optional sitemap careers pages.
         try { rawJobs.push(...await pollWatchlist()); }
         catch (err) { console.error('[Ingest] Watchlist poll failed:', err); }
 
@@ -239,6 +247,23 @@ async function pollWatchlist() {
     return out;
 }
 
+// Map this app's coarse profile categories → The Muse's category vocabulary.
+// Unknown categories are dropped; an empty result means "fetch all categories".
+function mapToMuseCategories(categories) {
+    const MAP = {
+        sales: 'Sales', operations: 'Operations', tech: 'Software Engineering',
+        engineering: 'Software Engineering', data: 'Data Science', marketing: 'Marketing',
+        finance: 'Accounting and Finance', hr: 'HR & Recruiting', product: 'Project & Product Management',
+        support: 'Customer Service', design: 'Design and UX'
+    };
+    const out = [];
+    for (const c of (categories || [])) {
+        const m = MAP[String(c || '').toLowerCase().trim()];
+        if (m && !out.includes(m)) out.push(m);
+    }
+    return out;
+}
+
 async function normalizeAts(company, title, loc, desc, url, posted, platform) {
     return {
         title: title || 'Unknown Title', company_name: company, job_location: loc,
@@ -283,23 +308,26 @@ async function fetchData(page = 1, append = false) {
         workspace.classList.toggle('inferno-mode', currentActiveZone === 'inferno');
 
         const strategyVal = parseInt(strategyDial?.value || 2);
-        
-        // Count non-noise, non-inferno jobs in the active bucket
-        const activeBucketJobs = allJobsCache.filter(j => 
-            j.is_eligible !== false && 
-            j.computed_zone !== 'noise' && 
-            j.computed_zone !== 'inferno' && 
+        const inInferno = currentActiveZone === 'inferno';
+
+        // Size of the bucket the user is actually looking at (ranked zones only).
+        const activeBucketJobs = allJobsCache.filter(j =>
+            j.is_eligible !== false &&
+            j.computed_zone !== 'noise' &&
+            j.computed_zone !== 'inferno' &&
             (currentActiveZone === 'all' || !currentActiveZone || j.computed_zone === currentActiveZone)
         );
         const bucketSize = activeBucketJobs.length;
-        
-        // Dynamic Strategy Slicing
+        const LOW_VOLUME = (window.CONFIG && window.CONFIG.LOW_VOLUME_THRESHOLD) || 24;
+
+        // Strategy Dial slicing.
+        //   • Inferno view → dial is N/A (hazard ≠ career strategy); show every posting.
+        //   • Low-volume bucket → disable 1/3 micro-slicing & show the whole bucket,
+        //     so a starved pool never renders an empty "Zero Results" screen.
+        //   • Otherwise → EXCLUSIVE slice: show ONLY the tier matching the dial
+        //     (untiered jobs stay visible as a safety net).
         let preloaded = allJobsCache;
-        if (bucketSize < 50) {
-            // Additive Slicing (Low Volume)
-            preloaded = preloaded.filter(j => !j.strategy_tier || j.strategy_tier <= strategyVal);
-        } else {
-            // Exclusive Slicing (High Volume)
+        if (!inInferno && bucketSize >= LOW_VOLUME) {
             preloaded = preloaded.filter(j => !j.strategy_tier || j.strategy_tier === strategyVal);
         }
 
@@ -309,7 +337,7 @@ async function fetchData(page = 1, append = false) {
             recencyDays: currentRecencyDays, industry: industryFilter.value,
             salaryMin: salaryMin.value, salaryMax: salaryMax.value,
             hideGhost: hideGhostJobs.checked, zone: currentActiveZone
-            // strategy_tier is handled via preloaded array to support additive slicing
+            // strategy_tier slicing is applied to `preloaded` above (exclusive equivalency)
         };
 
         const result = await window.dbAdapter.getJobs(filters, page, 50, preloaded);
@@ -731,15 +759,31 @@ async function quickBlacklist(companyName) {
 // =====================================================================
 // Strategy Dial — UI Filter (Exclusive Slicing)
 // =====================================================================
+const STRATEGY_NAMES = { 1: 'Survival', 2: 'Balanced', 3: 'Aggressive' };
+
+// Single source of truth for the dial's label + enabled state. The Strategy Dial
+// reshapes *career* strategy, which is meaningless for the hazard view — so in
+// Dante's Inferno the dial is disabled and labelled "N/A · Hazard View" (it used
+// to silently show a stale tier label there). Restores correctly on exit.
+function updateStrategyDialState() {
+    if (!strategyDial) return;
+    const inInferno = currentActiveZone === 'inferno';
+    strategyDial.disabled = inInferno;
+    const container = strategyDial.closest('.strategy-dial-container');
+    if (container) container.classList.toggle('dial-disabled', inInferno);
+    if (strategyLabel) {
+        strategyLabel.textContent = inInferno
+            ? 'N/A · Hazard View'
+            : (STRATEGY_NAMES[parseInt(strategyDial.value)] || 'Balanced');
+    }
+}
+
 let strategyDebounce;
 async function onStrategyChange(val) {
-    if (strategyLabel) strategyLabel.textContent = { 1: 'Survival', 2: 'Balanced', 3: 'Aggressive' }[val] || 'Balanced';
+    updateStrategyDialState();
     await window.dbAdapter.saveUserProfile({ strategyDial: val });
     clearTimeout(strategyDebounce);
-    strategyDebounce = setTimeout(() => {
-        // Just re-render. dbAdapter handles the exclusive filtering based on strategy_tier.
-        fetchData(1, false);
-    }, 150);
+    strategyDebounce = setTimeout(() => fetchData(1, false), 150);
 }
 
 // =====================================================================
@@ -810,6 +854,7 @@ function setupEventListeners() {
                 btn.classList.add('active');
                 currentActiveZone = btn.dataset.zone || 'strike';
                 document.body.classList.toggle('inferno-mode', currentActiveZone === 'inferno');
+                updateStrategyDialState();
                 fetchData(1, false);
             });
         });

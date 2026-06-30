@@ -1119,6 +1119,15 @@ button.copied .copy-icon { transform: scale(1.1); }
     gap: 0.35rem;
 }
 
+/* Strategy Dial is N/A in the hazard (Inferno) view — show it as inert. */
+.strategy-dial-container.dial-disabled {
+    opacity: 0.45;
+    filter: grayscale(0.6);
+}
+.strategy-dial-container.dial-disabled input[type="range"] {
+    cursor: not-allowed;
+}
+
 .strategy-slider {
     -webkit-appearance: none;
     appearance: none;

@@ -35,5 +35,15 @@ db.version(3).stores({
     localStorage.setItem('requires_rescore_v13', 'true');
 });
 
+// v4 — Phase 13.4 changed the zoning/seniority LOGIC (no new fields). Re-declare
+// the same store and flag a background re-score so existing listings are re-routed
+// by the new trajectory-primary engine (fixes stale "best of the worst" zones).
+db.version(4).stores({
+    job_listings: 'id, title, company_name, application_status, computed_zone, location_type, industry, is_ghost_job, is_eligible, days_since_posted, match_score, match_percentile, payload_hash, posted_at, ambiguity_index, transition_friction, strategy_tier, zone_rank'
+}).upgrade(() => {
+    console.log('[Storage] Migrated JobSearchDB schema to v4 (Phase 13.4 re-score).');
+    localStorage.setItem('requires_rescore_v13', 'true');
+});
+
 console.log('[Storage] Dexie IndexedDB initialized.');
 window.localDB = db; // Export to window for global availability

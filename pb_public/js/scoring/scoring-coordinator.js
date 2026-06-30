@@ -81,12 +81,16 @@
             return { mult: remoteLike ? 0.25 : 0.40, isStale: true };
         },
 
-        detectSeniority(title, desc) {
-            const combined = `${title} ${desc || ''}`.toLowerCase();
-            if (/\bdirector\b|\bvp\b|vice president|head of|\bchief\b|\bc[etof]o\b/i.test(combined)) return 'director';
-            if (/\bmanager\b|\blead\b|\bsupervisor\b|\bprincipal\b/i.test(combined)) return 'manager';
-            if (/\bsenior\b|\bsr\.?\b|\bstaff\b/i.test(combined)) return 'senior';
-            if (/\bcoordinator\b|\bspecialist\b|\brepresentative\b|\bassociate\b|\bjunior\b|\bjr\.?\b|\bentry\b|\bintern\b/i.test(combined)) return 'entry';
+        // Seniority is read from the TITLE ONLY. Scanning the full description
+        // hallucinated levels ("…reports to the Director" → 'director'), which
+        // flattened the Delta-Y trajectory axis. The title is the authoritative,
+        // low-noise signal; a missing level word honestly yields 'unspecified'.
+        detectSeniority(title) {
+            const t = (title || '').toLowerCase();
+            if (/\bdirector\b|\bvp\b|vice president|head of|\bchief\b|\bc[etof]o\b|\bpresident\b/i.test(t)) return 'director';
+            if (/\bmanager\b|\bmgr\b|\blead\b|\bsupervisor\b|\bprincipal\b/i.test(t)) return 'manager';
+            if (/\bsenior\b|\bsr\.?\b|\bstaff\b|\blevel iii\b|\biii\b/i.test(t)) return 'senior';
+            if (/\bcoordinator\b|\bspecialist\b|\brepresentative\b|\bassociate\b|\bjunior\b|\bjr\.?\b|\bentry\b|\bintern\b|\bassistant\b|\bclerk\b|\btrainee\b|\bapprentice\b/i.test(t)) return 'entry';
             return 'unspecified';
         },
 
@@ -182,7 +186,11 @@
             job.salary_mid = salaryMid;
 
             const scrubbed = this.scrubBoilerplate(descFull);
-            job.seniority_level = this.detectSeniority(title, descFull);
+            // Prefer a seniority supplied by a structured source (e.g. The Muse's
+            // explicit "levels"); otherwise derive it from the title only.
+            job.seniority_level = (job.source_seniority && SENIORITY_MAP[job.source_seniority] !== undefined)
+                ? job.source_seniority
+                : this.detectSeniority(title);
             if (window.industryClassifier) job.industry = window.industryClassifier.classify(descFull);
             job.apply_type = this.detectApplyType(job.apply_url, descFull);
 
@@ -226,9 +234,12 @@
             job.culture_score = cult.cultureScore !== null ? Math.round(cult.cultureScore * 100) : null;
             
             // 4. toxicity
-            const evalData = window.eligibilityEvaluator ? window.eligibilityEvaluator.evaluateJob(job) : { toxicityScore: 0, isInferno: false };
+            const evalData = window.eligibilityEvaluator ? window.eligibilityEvaluator.evaluateJob(job) : { toxicityScore: 0, isInferno: false, dominantCircle: null };
             job.toxicity_score = evalData.toxicityScore;
             job.toxicity_signals = evalData.signals;
+            // Persist the dominant cause so the Inferno banner/modal can name the
+            // "circle" (previously never stored → always rendered the generic label).
+            job.inferno_circle = evalData.dominantCircle || null;
             
             // 5. pay_score
             const payScore = this._payFitScore(job, userProfile);
@@ -275,111 +286,103 @@
             return jobs;
         },
 
-        // Phase 2 - Distribution
+        // Phase 2 — Distribution.
+        // Zones are assigned from the two candidate-relative axes the platform is
+        // built on (per AGENTS.md): résumé fit (Delta-X) and trajectory (Delta-Y).
+        // Absolute fit GATES — not forced score percentiles — decide Strike/Moonshot,
+        // so a starved or off-target pool can never promote "the best of the worst".
         distributeAndRank(jobsList, userProfile) {
-            const config = window.APP_CONFIG || {};
-            // Using 75 as instructed for MIN_TOXICITY_FLOOR (since it's a 0-100 scale)
-            const MIN_TOXICITY_FLOOR = config.MIN_TOXICITY_FLOOR || 75; 
-            const INFERNO_PERCENTILE = config.INFERNO_PERCENTILE || 84;
-            
-            const eligibleJobs = jobsList.filter(j => j.is_eligible !== false);
-            
-            // 1. INFERNO PURGE
-            eligibleJobs.sort((a, b) => (b.toxicity_score || 0) - (a.toxicity_score || 0));
-            const p84Index = Math.floor(eligibleJobs.length * (1 - (INFERNO_PERCENTILE / 100)));
-            const p84 = eligibleJobs.length > 0 && p84Index >= 0 && p84Index < eligibleJobs.length 
-                ? (eligibleJobs[p84Index].toxicity_score || 0) : 0;
-            
-            const infernoCutoff = Math.max(p84, MIN_TOXICITY_FLOOR);
-            
-            for (const j of eligibleJobs) {
-                if ((j.toxicity_score || 0) > infernoCutoff) {
-                    j.computed_zone = 'inferno';
-                }
+            const cfg = window.CONFIG || {};
+            const INFERNO_TOX  = cfg.INFERNO_TOXICITY_THRESHOLD ?? 50;
+            const INFERNO_MAXF = cfg.INFERNO_MAX_FRACTION ?? 0.40;
+            const NOISE_FIT    = cfg.NOISE_FIT_FLOOR ?? 0.18;
+            const STRIKE_FIT   = cfg.STRIKE_FIT_MIN ?? 0.40;
+            const MOON_FIT     = cfg.MOONSHOT_FIT_MIN ?? 0.30;
+
+            const eligible = jobsList.filter(j => j.is_eligible !== false);
+            // Idempotent reset so re-scoring an existing cache re-routes cleanly.
+            for (const j of eligible) if (j.computed_zone === 'inferno' || j.computed_zone === 'noise') j.computed_zone = 'pending';
+
+            // ── 1. INFERNO — absolute, calibrated toxicity threshold (matches evaluator.js).
+            // A safety cap guarantees Inferno can never become the majority pile,
+            // even for a pathological batch of postings.
+            let infernoJobs = eligible.filter(j => (j.toxicity_score || 0) >= INFERNO_TOX);
+            const cap = Math.floor(eligible.length * INFERNO_MAXF);
+            if (infernoJobs.length > cap) {
+                infernoJobs.sort((a, b) => (b.toxicity_score || 0) - (a.toxicity_score || 0));
+                infernoJobs = infernoJobs.slice(0, cap);
             }
-            
-            const cleanPool = eligibleJobs.filter(j => j.computed_zone !== 'inferno');
-            
-            // 2. NOISE FILTER
-            let sumDx = 0;
-            for (const j of cleanPool) sumDx += (j.delta_x || 0);
-            const meanDx = cleanPool.length > 0 ? sumDx / cleanPool.length : 0;
-            
-            let sumSqDx = 0;
-            for (const j of cleanPool) sumSqDx += Math.pow((j.delta_x || 0) - meanDx, 2);
-            const stdDx = cleanPool.length > 0 ? Math.sqrt(sumSqDx / cleanPool.length) : 0;
-            
-            const noiseFloor = Math.max(0.05, meanDx - 2 * stdDx);
-            
-            for (const j of cleanPool) {
-                if ((j.delta_x || 0) < noiseFloor) {
-                    j.computed_zone = 'noise';
-                }
-            }
-            
-            const distroPool = cleanPool.filter(j => j.computed_zone !== 'noise');
-            
-            // 3. FORCED PERCENTILE SPLIT
-            distroPool.sort((a, b) => (b.match_score || 0) - (a.match_score || 0));
-            
-            // Compute percentiles for display
-            const scores = Array.from(new Set(distroPool.map(j => j.match_score || 0))).sort((a, b) => a - b);
+            const infernoSet = new Set(infernoJobs);
+            for (const j of infernoSet) { j.computed_zone = 'inferno'; j.strategy_tier = null; }
+            const clean = eligible.filter(j => !infernoSet.has(j));
+
+            // ── 2. PERCENTILE (display only) over the clean pool.
+            const scores = Array.from(new Set(clean.map(j => j.match_score || 0))).sort((a, b) => a - b);
             const scoreToPct = {};
             scores.forEach((s, i) => { scoreToPct[s] = scores.length > 1 ? Math.round((i / (scores.length - 1)) * 100) : 100; });
-            
-            const third = Math.floor(distroPool.length / 3);
-            
-            distroPool.forEach((j, index) => {
-                const pct = scoreToPct[j.match_score || 0] ?? 100;
-                j.match_percentile = pct;
-                j.zone_rank = index; // Keep sorting order
-                
-                if (distroPool.length < (config.MIN_CLEAN_POOL_FOR_DISTRIBUTION || 9)) {
-                    // Fallback to absolute thresholds if pool is too small
-                    if (j.delta_x >= 0.55 && j.match_score >= 70) j.computed_zone = 'strike';
-                    else if (j.delta_x >= 0.40) j.computed_zone = 'moonshot';
-                    else j.computed_zone = 'safety';
+            for (const j of clean) j.match_percentile = scoreToPct[j.match_score || 0] ?? 100;
+
+            // ── 3. RELEVANCE FLOOR (fit-primary) → 'noise' (hidden).
+            // Fit (Delta-X) is the true relevance signal; pay/culture must not rescue
+            // an off-target role. If the ENTIRE pool is weak (e.g. starved network, no
+            // résumé), we DON'T hide everything — better an honest Safety Net than a
+            // blank "Zero Results" screen. Nothing weak ever reaches Strike/Moonshot.
+            const allWeak = clean.length > 0 && clean.every(j => (j.delta_x || 0) < NOISE_FIT);
+            for (const j of clean) {
+                j.computed_zone = (!allWeak && (j.delta_x || 0) < NOISE_FIT) ? 'noise' : 'pending';
+            }
+            const relevant = clean.filter(j => j.computed_zone !== 'noise');
+
+            // ── 4. ZONE by trajectory (Delta-Y), gated by fit (Delta-X).
+            for (const j of relevant) {
+                const dy  = j.trajectory_recent;   // job − recent seniority; null if level unknown
+                const fit = j.delta_x || 0;
+                let zone;
+                if (dy === null || dy === undefined) {
+                    // Unknown level → can't claim a reach. Strong fit = Strike, else fallback.
+                    zone = (fit >= STRIKE_FIT) ? 'strike' : 'safety';
+                } else if (dy >= 2) {
+                    zone = (fit >= MOON_FIT) ? 'moonshot' : 'safety';        // clear reach up
+                } else if (dy === 1) {
+                    zone = (fit >= STRIKE_FIT) ? 'strike'                    // qualified step-up
+                         : (fit >= MOON_FIT)   ? 'moonshot'                  // partial-fit reach
+                         : 'safety';
+                } else if (dy <= -1) {
+                    zone = 'safety';                                         // step down in-field
                 } else {
-                    if (index < third) j.computed_zone = 'strike';
-                    else if (index < 2 * third) j.computed_zone = 'moonshot';
-                    else j.computed_zone = 'safety';
+                    zone = (fit >= STRIKE_FIT) ? 'strike' : 'safety';        // lateral
                 }
-                
-                // 4. TRAJECTORY OVERRIDE
-                if (j.trajectory_peak !== null && j.trajectory_recent !== null) {
-                    if (j.trajectory_peak >= -0.5 && j.trajectory_peak <= 0.5 && j.trajectory_recent >= 1) {
-                        j.computed_zone = 'moonshot';
-                    }
-                    if (j.trajectory_peak <= -2) {
-                        j.computed_zone = 'safety';
-                    }
-                }
-            });
-            
-            // 5. STRATEGY TIERS (within zones)
-            const zones = ['strike', 'moonshot', 'safety'];
-            for (const z of zones) {
-                const zoneJobs = distroPool.filter(j => j.computed_zone === z);
-                // Sort by friction ascending (lowest friction = tier 1)
-                zoneJobs.sort((a, b) => (a.transition_friction || 0) - (b.transition_friction || 0));
-                
+                j.computed_zone = zone;
+                j.zone_rank = 0;
+            }
+
+            // ── 5. STRATEGY TIERS within each zone — sliced by transition friction
+            // (ascending: tier 1 = lowest friction / easiest, tier 3 = biggest reach).
+            // The Strategy Dial selects which tier to show. Too-small zones get the
+            // neutral Balanced tier so the dial never blanks them.
+            for (const z of ['strike', 'moonshot', 'safety']) {
+                const zoneJobs = relevant.filter(j => j.computed_zone === z)
+                    .sort((a, b) => (a.transition_friction || 0) - (b.transition_friction || 0));
                 const zThird = Math.floor(zoneJobs.length / 3);
-                zoneJobs.forEach((j, index) => {
-                    if (index < zThird) j.strategy_tier = 1; // Survival (easiest)
-                    else if (index < 2 * zThird) j.strategy_tier = 2; // Balanced
-                    else j.strategy_tier = 3; // Aggressive
+                zoneJobs.forEach((j, i) => {
+                    j.zone_rank = i;
+                    if (zThird === 0) j.strategy_tier = 2;
+                    else if (i < zThird) j.strategy_tier = 1;
+                    else if (i < 2 * zThird) j.strategy_tier = 2;
+                    else j.strategy_tier = 3;
                 });
             }
 
-            // Clean up titles
+            // ── 6. Labels.
             for (const j of jobsList) {
-                if (j.computed_zone === 'strike') j.target_status = 'Tier 1 / Top Match';
-                else if (j.computed_zone === 'moonshot') j.target_status = 'Tier 2 / Strong Match';
-                else if (j.computed_zone === 'safety') j.target_status = 'Tier 3 / Moderate Match';
-                else if (j.computed_zone === 'inferno') j.target_status = 'Inferno';
-                else j.target_status = 'Filtered';
+                switch (j.computed_zone) {
+                    case 'strike':   j.target_status = 'Tier 1 / Top Match'; break;
+                    case 'moonshot': j.target_status = 'Tier 2 / Strong Match'; break;
+                    case 'safety':   j.target_status = 'Tier 3 / Moderate Match'; break;
+                    case 'inferno':  j.target_status = 'Inferno'; break;
+                    default:         j.target_status = 'Filtered';
+                }
             }
-            
             return jobsList;
         }
     };

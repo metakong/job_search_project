@@ -3,26 +3,38 @@
 // =====================================================================
 
 async function fetchWithCORS(url, options = {}) {
-    const PROXY_LIST = [
+    const TIMEOUT_MS = (window.CONFIG && window.CONFIG.FETCH_TIMEOUT_MS) || 12000;
+
+    // Attempt order: a DIRECT request first (many JSON APIs — e.g. Remotive, The
+    // Muse — send `Access-Control-Allow-Origin`, which is faster and far more
+    // reliable than a public proxy), then fall back through several public proxies.
+    const attempts = [
+        url,
         `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-        `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+        `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+        `https://thingproxy.freeboard.io/fetch/${url}`
     ];
 
-    for (const proxyUrl of PROXY_LIST) {
-        console.log(`[CORS Fetch] Routing target: ${url} through proxy: ${proxyUrl}`);
+    for (let i = 0; i < attempts.length; i++) {
+        const attempt = attempts[i];
+        const label = i === 0 ? 'direct' : `proxy ${i}`;
+        // Per-attempt timeout so one hung route can't stall an entire sweep.
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
         try {
-            const response = await fetch(proxyUrl, options);
-            if (!response.ok) {
-                throw new Error(`CORS Proxy fetch returned HTTP status ${response.status}`);
-            }
+            const response = await fetch(attempt, { ...options, signal: controller.signal });
+            clearTimeout(timer);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
             return response;
         } catch (err) {
-            console.warn(`[CORS Fetch] Proxy failed: ${proxyUrl}. Trying next...`);
+            clearTimeout(timer);
+            console.warn(`[CORS Fetch] ${label} failed for ${url} (${err.message}). Trying next…`);
         }
     }
-    
-    console.warn(`[CORS Fetch] All CORS proxies failed for ${url}`);
+
+    // Never throw — a blocked source must degrade gracefully, not crash the sweep.
+    console.warn(`[CORS Fetch] All routes failed for ${url}; returning empty fallback.`);
     return new Response('[]', { status: 200, statusText: 'CORS Blocked Fallback' });
 }
 

@@ -144,6 +144,10 @@
             return {
                 toxicityScore,
                 isInferno,
+                // dominantCircle is the highest-weight cause regardless of threshold,
+                // so the coordinator can label the banner even when it applies its own
+                // (config-driven) Inferno cutoff. infernoCircle kept for back-compat.
+                dominantCircle: bestCircle,
                 infernoCircle: isInferno ? bestCircle : null,
                 signals,
                 passLogistics: true, // retained for backward compatibility
