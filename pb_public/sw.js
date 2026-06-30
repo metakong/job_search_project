@@ -54,7 +54,7 @@ self.addEventListener('fetch', (event) => {
 
     // Job-board / API traffic → network-first, fall back to cache when offline.
     if (url.origin !== self.location.origin || url.pathname.includes('/api/')) {
-        event.respondWith(fetch(event.request).catch(() => caches.match(event.request)));
+        event.respondWith(fetch(event.request).catch(() => caches.match(event.request).then(cached => cached || Response.error())));
         return;
     }
 
@@ -66,6 +66,6 @@ self.addEventListener('fetch', (event) => {
                 caches.open(CACHE_NAME).then(c => c.put(event.request, clone));
             }
             return resp;
-        }).catch(() => cached))
+        }).catch(() => Response.error()))
     );
 });

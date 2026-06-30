@@ -28,7 +28,11 @@ async function fetchWithCORS(url, options = {}) {
     } catch (err) {
         console.warn(`[CORS Fetch] Proxy failed. Attempting direct fetch for ${url}:`, err);
         // Direct fetch fallback in case proxy is broken or blocked
-        return fetch(url, options);
+        return fetch(url, options).catch(fallbackErr => {
+            console.warn(`[CORS Fetch] Direct fetch also failed (CORS blocked for URL, skipping...): ${url}`, fallbackErr);
+            // Return a safe fallback empty response to prevent unhandled rejection crashes
+            return new Response('[]', { status: 200, statusText: 'CORS Blocked Fallback' });
+        });
     }
 }
 

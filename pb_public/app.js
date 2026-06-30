@@ -194,7 +194,7 @@ async function runIngestionSweep() {
         updateLoadingText('Saving results to local database…');
         const { newInserts, duplicates } = await window.dbAdapter.saveJobsBulk(scored);
         await loadAllJobs();
-        window.scoringCoordinator.recalculatePercentiles(allJobsCache);
+        window.scoringCoordinator.distributeAndRank(allJobsCache);
         await window.dbAdapter.persistJobs(allJobsCache);
 
         const ineligible = scored.filter(j => j.is_eligible === false || j.computed_zone === 'noise').length;
@@ -755,7 +755,7 @@ async function runBackgroundRescore() {
             await sleep(10);
         }
 
-        window.scoringCoordinator.recalculatePercentiles(all);
+        window.scoringCoordinator.distributeAndRank(all);
         await window.dbAdapter.persistJobs(all);
         allJobsCache = all;
         
