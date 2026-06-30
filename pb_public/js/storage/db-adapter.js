@@ -8,24 +8,29 @@
     const dbAdapter = {
         // ── User Profile ─────────────────────────────────────────────────────
         async getUserProfile() {
+            const defaultProfile = {
+                id: 'default',
+                location: 'Springfield, MO',
+                radius: 30,
+                salaryFloor: 40000,
+                baselineSeniority: 2,
+                strategyDial: 2,
+                categories: ['sales', 'operations', 'tech'],
+                search_queries: [],
+                resumeText: '',
+                enableSemanticMatching: false,
+                corsProxyOverride: ''
+            };
+
             try {
+                // Guard clause in case Dexie completely failed to load
+                if (!window.localDB) throw new Error("Database not initialized");
+                
                 const profile = await window.localDB.user_profile.get('default');
-                return profile || {
-                    id: 'default',
-                    location: 'Springfield, MO',
-                    radius: 30,
-                    salaryFloor: 40000,
-                    baselineSeniority: 2,
-                    strategyDial: 2,
-                    categories: ['sales', 'operations', 'tech'],
-                    search_queries: [],
-                    resumeText: '',
-                    enableSemanticMatching: false,
-                    corsProxyOverride: ''
-                };
+                return profile || defaultProfile;
             } catch (err) {
-                console.error('[DB Adapter] Failed to get user profile:', err);
-                return null;
+                console.error('[DB Adapter] Failed to get user profile. Returning safe default.', err);
+                return defaultProfile; // Returns safe defaults instead of fatal 'null'
             }
         },
 
