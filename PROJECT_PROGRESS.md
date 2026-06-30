@@ -312,3 +312,10 @@ This file tracks all changes, architectural decisions, and feature implementatio
   - **Component 3 (Scoring Engine Refactor)**: Refactored `resume-parser.js` for Peak vs Recent seniority detection. Added `computeWeightedOverlap` in `skill-matcher.js`. Overhauled `scoring-coordinator.js` to use a 2-phase pipeline (feature extraction -> global percentile distribution). Re-calibrated the toxicity minimum floor to 75 (0-100 scale).
   - **Component 4 (Schema Migration)**: Bumped Dexie DB schema in `local-db.js` to v3. Added new fields (`ambiguity_index`, `transition_friction`, `strategy_tier`, `zone_rank`). Implemented a `requires_rescore_v13` trigger on upgrade.
   - **Component 5 (UI Updates)**: Refactored Strategy Dial to be an exclusive filter (`db-adapter.js`) mapping strictly to 1/3 subsets. Updated `app.js` to handle `requires_rescore_v13` with a non-blocking toast, and implemented dual seniority dropdowns in `setup-wizard.js`. Added `card--pending` CSS for loading states.
+
+### Phase 13.3: Production Hardening
+- **Status**: Completed
+- **Changes**:
+  - **CORS Proxy Rotation**: Updated `fetch.js` to rotate through a fallback list of proxies, preventing 403 blocks from crashing the ingestion sweep.
+  - **Delta-Y Math Repair**: Fixed the trajectory flatlining logic in `scoring-coordinator.js` so "Unknown" seniority jobs are correctly assigned `null` trajectories instead of `0`. Updated the UI in `app.js` to render "Unknown Trajectory" accordingly.
+  - **Dynamic Strategy Slicing**: Altered `app.js` to dynamically toggle the Strategy Dial between Exclusive (tier matching) and Additive (tier threshold) filtering if the active pool drops below 50 listings.

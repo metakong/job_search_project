@@ -18,7 +18,7 @@
     const BODY_RE       = /<body[^>]*>([\s\S]*?)<\/body>/i;
 
     // ── Seniority ladder ─────────────────────────────────────────────
-    const SENIORITY_MAP = { director: 4, manager: 3, senior: 2, entry: 1, unspecified: 2 };
+    const SENIORITY_MAP = { director: 4, manager: 3, senior: 2, entry: 1, unspecified: 0 };
 
     function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
@@ -82,7 +82,7 @@
         },
 
         detectSeniority(title, desc) {
-            const combined = `${title} ${(desc || '').substring(0, 300)}`.toLowerCase();
+            const combined = `${title} ${desc || ''}`.toLowerCase();
             if (/\bdirector\b|\bvp\b|vice president|head of|\bchief\b|\bc[etof]o\b/i.test(combined)) return 'director';
             if (/\bmanager\b|\blead\b|\bsupervisor\b|\bprincipal\b/i.test(combined)) return 'manager';
             if (/\bsenior\b|\bsr\.?\b|\bstaff\b/i.test(combined)) return 'senior';
@@ -237,11 +237,16 @@
             job.match_score = this._adaptiveCoreScore(deltaX, payScore, cult.cultureScore, ai);
             
             // 7/8. trajectory
-            const jobSen = SENIORITY_MAP[job.seniority_level] || 2;
+            const jobSen = SENIORITY_MAP[job.seniority_level] !== undefined ? SENIORITY_MAP[job.seniority_level] : 0;
             const peakSen = (userProfile && userProfile.peakSeniority) || 2;
             const recentSen = (userProfile && userProfile.recentSeniority) || peakSen;
-            job.trajectory_peak = jobSen - peakSen;
-            job.trajectory_recent = jobSen - recentSen;
+            if (jobSen === 0) {
+                job.trajectory_peak = null;
+                job.trajectory_recent = null;
+            } else {
+                job.trajectory_peak = jobSen - peakSen;
+                job.trajectory_recent = jobSen - recentSen;
+            }
             
             // 9. transition_friction
             if (window.transitionFriction) job.transition_friction = window.transitionFriction.compute(job, userProfile || {});
@@ -341,11 +346,13 @@
                 }
                 
                 // 4. TRAJECTORY OVERRIDE
-                if (j.trajectory_peak >= -0.5 && j.trajectory_peak <= 0.5 && j.trajectory_recent >= 1) {
-                    j.computed_zone = 'moonshot';
-                }
-                if (j.trajectory_peak <= -2) {
-                    j.computed_zone = 'safety';
+                if (j.trajectory_peak !== null && j.trajectory_recent !== null) {
+                    if (j.trajectory_peak >= -0.5 && j.trajectory_peak <= 0.5 && j.trajectory_recent >= 1) {
+                        j.computed_zone = 'moonshot';
+                    }
+                    if (j.trajectory_peak <= -2) {
+                        j.computed_zone = 'safety';
+                    }
                 }
             });
             

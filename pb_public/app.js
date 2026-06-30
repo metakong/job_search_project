@@ -282,16 +282,37 @@ async function fetchData(page = 1, append = false) {
         const workspace = document.querySelector('main.container') || document.body;
         workspace.classList.toggle('inferno-mode', currentActiveZone === 'inferno');
 
+        const strategyVal = parseInt(strategyDial?.value || 2);
+        
+        // Count non-noise, non-inferno jobs in the active bucket
+        const activeBucketJobs = allJobsCache.filter(j => 
+            j.is_eligible !== false && 
+            j.computed_zone !== 'noise' && 
+            j.computed_zone !== 'inferno' && 
+            (currentActiveZone === 'all' || !currentActiveZone || j.computed_zone === currentActiveZone)
+        );
+        const bucketSize = activeBucketJobs.length;
+        
+        // Dynamic Strategy Slicing
+        let preloaded = allJobsCache;
+        if (bucketSize < 50) {
+            // Additive Slicing (Low Volume)
+            preloaded = preloaded.filter(j => !j.strategy_tier || j.strategy_tier <= strategyVal);
+        } else {
+            // Exclusive Slicing (High Volume)
+            preloaded = preloaded.filter(j => !j.strategy_tier || j.strategy_tier === strategyVal);
+        }
+
         const filters = {
             search: searchInput.value, sort: sortSelect.value,
             appStatus: appStatusFilter.value, location: locationFilter.value,
             recencyDays: currentRecencyDays, industry: industryFilter.value,
             salaryMin: salaryMin.value, salaryMax: salaryMax.value,
-            hideGhost: hideGhostJobs.checked, zone: currentActiveZone,
-            strategy_tier: parseInt(strategyDial?.value || 2)
+            hideGhost: hideGhostJobs.checked, zone: currentActiveZone
+            // strategy_tier is handled via preloaded array to support additive slicing
         };
 
-        const result = await window.dbAdapter.getJobs(filters, page, 50, allJobsCache);
+        const result = await window.dbAdapter.getJobs(filters, page, 50, preloaded);
         let listings = result.items.map(mapJob);
 
         // Client-side fuzzy blacklist (safety net for names added since last score).
@@ -345,7 +366,7 @@ function mapJob(r) {
         computed_zone: r.computed_zone || 'strike',
         inferno_circle: r.inferno_circle || null,
         delta_x: r.delta_x ?? 0,
-        delta_y: r.delta_y ?? 0
+        delta_y: r.trajectory_recent !== undefined ? r.trajectory_recent : (r.delta_y ?? null)
     };
 }
 
@@ -411,7 +432,7 @@ function renderCards() {
                 </div>
                 <div class="delta-row">
                     <span>Delta-X (Fit): <strong>${(job.delta_x || 0).toFixed(2)}</strong></span>
-                    <span>Delta-Y (Trajectory): <strong>${job.delta_y >= 0 ? '+' : ''}${job.delta_y}</strong> ${trajectoryLabel(job.delta_y)}</span>
+                    <span>Delta-Y (Trajectory): <strong>${job.delta_y === null || job.delta_y === undefined ? 'Unknown Trajectory' : `${job.delta_y >= 0 ? '+' : ''}${job.delta_y} ${trajectoryLabel(job.delta_y)}`}</strong></span>
                 </div>
             </div>
             <div class="job-card-footer">
@@ -537,7 +558,7 @@ async function openModal(job) {
     modalLocation.textContent = capitalize(job.location_type) || 'Unknown';
     modalApplyType.textContent = capitalize((job.apply_type || '').replace('_', ' ')) || 'Unknown';
     modalPercentile.textContent = job.match_percentile != null ? `Top ${Math.max(1, 100 - job.match_percentile)}%` : '—';
-    if (modalTrajectory) modalTrajectory.textContent = `${job.delta_y >= 0 ? '+' : ''}${job.delta_y} ${trajectoryLabel(job.delta_y)}`;
+    if (modalTrajectory) modalTrajectory.textContent = (job.delta_y === null || job.delta_y === undefined) ? 'Unknown Trajectory' : `${job.delta_y >= 0 ? '+' : ''}${job.delta_y} ${trajectoryLabel(job.delta_y)}`;
 
     const dateObj = new Date(job.posted_at);
     modalPostedDate.textContent = isNaN(dateObj) ? 'Unknown' : dateObj.toLocaleDateString();

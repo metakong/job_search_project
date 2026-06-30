@@ -3,37 +3,27 @@
 // =====================================================================
 
 async function fetchWithCORS(url, options = {}) {
-    const proxy = await window.CONFIG.getCORSProxy();
-    let proxyUrl;
-    
-    if (proxy.endsWith('?')) {
-        // Standard public proxy like https://corsproxy.io/?
-        proxyUrl = `${proxy}${url}`;
-    } else if (proxy.includes('?url=') || proxy.endsWith('url=')) {
-        // e.g., custom worker https://myworker.dev/?url=
-        proxyUrl = proxy.endsWith('url=') ? `${proxy}${encodeURIComponent(url)}` : `${proxy}&url=${encodeURIComponent(url)}`;
-    } else {
-        // Generic fallback: check if proxy contains a query sign, and append appropriately
-        proxyUrl = proxy.includes('?') ? `${proxy}&url=${encodeURIComponent(url)}` : `${proxy}${url}`;
-    }
-    
-    console.log(`[CORS Fetch] Routing target: ${url} through proxy: ${proxyUrl}`);
-    
-    try {
-        const response = await fetch(proxyUrl, options);
-        if (!response.ok) {
-            throw new Error(`CORS Proxy fetch returned HTTP status ${response.status}`);
+    const PROXY_LIST = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+    ];
+
+    for (const proxyUrl of PROXY_LIST) {
+        console.log(`[CORS Fetch] Routing target: ${url} through proxy: ${proxyUrl}`);
+        try {
+            const response = await fetch(proxyUrl, options);
+            if (!response.ok) {
+                throw new Error(`CORS Proxy fetch returned HTTP status ${response.status}`);
+            }
+            return response;
+        } catch (err) {
+            console.warn(`[CORS Fetch] Proxy failed: ${proxyUrl}. Trying next...`);
         }
-        return response;
-    } catch (err) {
-        console.warn(`[CORS Fetch] Proxy failed. Attempting direct fetch for ${url}:`, err);
-        // Direct fetch fallback in case proxy is broken or blocked
-        return fetch(url, options).catch(fallbackErr => {
-            console.warn(`[CORS Fetch] Direct fetch also failed (CORS blocked for URL, skipping...): ${url}`, fallbackErr);
-            // Return a safe fallback empty response to prevent unhandled rejection crashes
-            return new Response('[]', { status: 200, statusText: 'CORS Blocked Fallback' });
-        });
     }
+    
+    console.warn(`[CORS Fetch] All CORS proxies failed for ${url}`);
+    return new Response('[]', { status: 200, statusText: 'CORS Blocked Fallback' });
 }
 
 async function generateSHA256(company, title, location) {
