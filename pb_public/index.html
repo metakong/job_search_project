@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Linguistic Signal & Technical Leverage Dashboard</title>
-    <meta name="description" content="Real-time job intelligence dashboard for Systems Architecture and Sales Operations roles in Springfield, MO. Filter, score, and track job applications.">
+    <title>Job Search Intelligence Platform</title>
+    <meta name="description" content="A free, browser-native, candidate-first job search platform. Discover, score, and track job opportunities your way — risk/reward zones, toxicity detection, and résumé-driven matching, all running locally in your browser.">
+    <meta name="theme-color" content="#111111">
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -15,39 +16,40 @@
     <link rel="stylesheet" href="style.css">
     <!-- PWA Manifest -->
     <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
     <!-- Dexie.js for IndexedDB -->
-    <script src="https://unpkg.com/dexie@latest/dist/dexie.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dexie@4.0.8/dist/dexie.min.js"></script>
     <!-- PDF.js for client-side resume parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
     <!-- Fuse.js for client-side fuzzy blacklist matching -->
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
-    <!-- Marked.js for markdown rendering -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    
+    <!-- Marked.js for markdown rendering + DOMPurify for sanitization (XSS-safe) -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+
     <!-- Database and Config -->
     <script src="js/storage/local-db.js"></script>
     <script src="js/storage/db-adapter.js"></script>
     <script src="js/config.js"></script>
     <script src="js/utils/fetch.js"></script>
     <script src="js/storage/data-portability.js"></script>
-    
+
     <!-- Extractors -->
     <script src="js/extractors/rss-adapter.js"></script>
     <script src="js/extractors/remotive-api.js"></script>
     <script src="js/extractors/sitemap-parser.js"></script>
-    
+
     <!-- AI & Parsing -->
-    <script src="js/ai/byok-router.js"></script>
     <script src="js/ai/resume-parser.js"></script>
     <script src="js/ai/transformers-engine.js"></script>
-    
+
     <!-- Scoring -->
     <script src="js/scoring/evaluator.js"></script>
     <script src="js/scoring/skill-matcher.js"></script>
     <script src="js/scoring/culture-evaluator.js"></script>
     <script src="js/scoring/industry-classifier.js"></script>
     <script src="js/scoring/scoring-coordinator.js"></script>
-    
+
     <!-- Features -->
     <script src="js/features/setup-wizard.js"></script>
 </head>
@@ -55,22 +57,13 @@
     <header class="container">
         <div class="header-content">
             <div>
-                <h1>Linguistic Signal <span class="amp">&amp;</span> Technical Leverage</h1>
-                <p class="subtitle">Systems Architecture Target Acquisition Dashboard</p>
+                <h1>Job Search <span class="amp">Intelligence</span></h1>
+                <p class="subtitle">Candidate-first job discovery, scoring &amp; tracking — your search, your way.</p>
             </div>
             <div class="header-actions">
-                <button id="ingest-sweep-btn" class="primary" title="Trigger direct browser-based scraping sweep" style="margin-right: 0.5rem; display: inline-flex; align-items: center; gap: 0.25rem;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                    Ingest Sweep
-                </button>
-                <button id="export-csv-btn" class="btn-secondary-action" title="Export current view to CSV">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                    Export CSV
-                </button>
-                <button id="settings-toggle-btn" class="btn-secondary-action" title="Blacklist management">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M16.95 16.95l1.41 1.41M4.93 4.93l1.41 1.41M7.05 16.95l-1.41 1.41M20 12h-2M6 12H4M12 20v-2M12 6V4"/></svg>
-                    Settings
-                </button>
+                <button id="ingest-sweep-btn" class="primary" title="Run a direct in-browser scraping &amp; scoring sweep" style="margin-right: 0.5rem;">↻ Ingest Sweep</button>
+                <button id="export-csv-btn" class="btn-secondary-action" title="Export current view to CSV">⭳ Export CSV</button>
+                <button id="settings-toggle-btn" class="btn-secondary-action" title="Settings &amp; blacklist">⚙ Settings</button>
                 <div class="header-badge">
                     <span class="pulse-indicator" id="connection-indicator"></span>
                     <span id="connection-status-text">Connecting…</span>
@@ -85,7 +78,7 @@
             <div class="stats-grid">
                 <div class="stat-card">
                     <div class="stat-value" id="stat-total-jobs">0</div>
-                    <div class="stat-label">Eligible Jobs Scored</div>
+                    <div class="stat-label">Scored Opportunities</div>
                     <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.25rem;">
                         <span class="stat-sub">Raw Ingested: <span id="stat-raw-ingested">0</span></span>
                         <span class="stat-sub">Discarded/Deduped: <span id="stat-discarded">0</span></span>
@@ -100,8 +93,8 @@
                     <div class="stat-label">Tier 2 Strong Matches</div>
                 </div>
                 <div class="stat-card avg-leverage">
-                    <div class="stat-value" id="stat-avg-leverage">0.0</div>
-                    <div class="stat-label">Avg Leverage Ratio</div>
+                    <div class="stat-value" id="stat-avg-core">0</div>
+                    <div class="stat-label">Avg Core Score</div>
                 </div>
             </div>
         </section>
@@ -109,7 +102,6 @@
         <!-- Filters & Controls -->
         <section id="controls-section">
             <div class="controls-card">
-                <!-- Row 1: Search + Status + Sort -->
                 <div class="grid controls-row-1">
                     <div>
                         <label for="search-input">Search Target</label>
@@ -119,15 +111,15 @@
                         <label for="sort-select">Sort By</label>
                         <select id="sort-select">
                             <option value="-match_score">Core Score (High → Low)</option>
+                            <option value="-fit_score">Résumé Fit (High → Low)</option>
                             <option value="-match_percentile">Match Percentile (High → Low)</option>
-                            <option value="-skill_match_score">Skills Overlap (High → Low)</option>
+                            <option value="-culture_score">Culture (High → Low)</option>
                             <option value="toxicity_score">Toxicity (Low → High)</option>
                             <option value="-ats_alignment_score">ATS Alignment (High → Low)</option>
-                            <option value="-days_since_posted">Newest First</option>
+                            <option value="days_since_posted">Newest First</option>
                         </select>
                     </div>
                 </div>
-                <!-- Row 2: App status + Location + Recency toggle -->
                 <div class="controls-row-2">
                     <div class="control-group">
                         <label>Application Status</label>
@@ -148,7 +140,7 @@
                             <option value="ALL">All Locations</option>
                             <option value="on_site">On-Site</option>
                             <option value="hybrid">Hybrid</option>
-                            <option value="remote">Remote (≤14d)</option>
+                            <option value="remote">Remote</option>
                             <option value="unknown">Unknown</option>
                         </select>
                     </div>
@@ -156,14 +148,13 @@
                         <label>Recency Window</label>
                         <div class="recency-toggle" id="recency-toggle">
                             <button class="recency-btn" data-days="7">7d</button>
-                            <button class="recency-btn active" data-days="14">14d</button>
+                            <button class="recency-btn" data-days="14">14d</button>
                             <button class="recency-btn" data-days="21">21d</button>
                             <button class="recency-btn" data-days="30">30d</button>
-                            <button class="recency-btn" data-days="9999">All</button>
+                            <button class="recency-btn active" data-days="9999">All</button>
                         </div>
                     </div>
                 </div>
-                <!-- Row 3: Industry + Salary + Ghost Jobs -->
                 <div class="grid controls-row-1" style="margin-top: 1rem;">
                     <div>
                         <label for="industry-filter">Industry</label>
@@ -196,13 +187,9 @@
                         </label>
                     </div>
                 </div>
-                <!-- Row Actions -->
                 <div class="controls-row-2" style="margin-top: 1rem;">
                     <div class="controls-row-actions" style="margin-left: auto;">
-                        <button id="save-filter-btn" class="btn-secondary-action">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-                            Save Filter
-                        </button>
+                        <button id="save-filter-btn" class="btn-secondary-action">💾 Save Filter</button>
                         <select id="profile-select" title="Load saved filter profile">
                             <option value="">Load Profile…</option>
                         </select>
@@ -211,26 +198,18 @@
             </div>
         </section>
 
-        <!-- Blacklist Management Panel (Item 19) -->
+        <!-- Settings / Blacklist Panel -->
         <section id="blacklist-panel" class="blacklist-panel" style="display:none;">
             <div class="blacklist-inner">
-                <h3 class="panel-title">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-                    Blacklisted Companies
-                </h3>
+                <h3 class="panel-title">🚫 Blacklisted Companies</h3>
                 <div class="blacklist-add-row">
                     <input type="text" id="blacklist-input" placeholder="Company name to blacklist…">
                     <input type="text" id="blacklist-reason" placeholder="Reason (optional)">
                     <button id="blacklist-add-btn" class="btn-secondary-action">Add</button>
                 </div>
-                <div id="blacklist-list" class="blacklist-list">
-                    <!-- Populated by JS -->
-                </div>
+                <div id="blacklist-list" class="blacklist-list"></div>
                 <div class="portability-section" style="margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;">
-                    <h3 class="panel-title">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                        PWA settings & backups
-                    </h3>
+                    <h3 class="panel-title">⚙ Settings &amp; Backups</h3>
                     <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem;">
                         <button id="wizard-reopen-btn" class="btn-secondary-action" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">Edit Setup Parameters</button>
                         <button id="export-db-btn" class="btn-secondary-action" style="padding: 0.25rem 0.75rem; font-size: 0.85rem;">Export JSON Backup</button>
@@ -244,14 +223,14 @@
         <!-- Strategy Navigation -->
         <section id="strategy-navigation" style="margin-bottom: 2rem;">
             <div class="zone-tabs" id="zone-tabs">
-                <button class="zone-tab active" data-zone="strike">🎯 The Strike Zone</button>
-                <button class="zone-tab" data-zone="moonshot">🚀 The Moonshots</button>
-                <button class="zone-tab" data-zone="safety">🛡️ The Safety Net</button>
-                <button class="zone-tab" data-zone="inferno">🔥 Dante's Inferno</button>
+                <button class="zone-tab active" data-zone="strike" title="Well-aligned, lateral moves — average risk/reward">🎯 The Strike Zone</button>
+                <button class="zone-tab" data-zone="moonshot" title="A reach up — high risk/reward, partly qualified">🚀 The Moonshots</button>
+                <button class="zone-tab" data-zone="safety" title="A step down in your field — low risk, a fallback in a tough market">🛡️ The Safety Net</button>
+                <button class="zone-tab" data-zone="inferno" title="Psychologically hazardous postings — handle with care">🔥 Dante's Inferno</button>
             </div>
             <div class="strategy-dial-container" style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 1rem 1.5rem; display: flex; align-items: center; gap: 1.5rem; margin-top: 1rem;">
                 <label for="strategy-dial" style="white-space: nowrap; margin: 0; font-weight: 700; color: var(--text-primary);">JOB HUNT STRATEGY:</label>
-                <input type="range" id="strategy-dial" min="1" max="3" step="1" value="2" style="flex: 1; cursor: pointer;">
+                <input type="range" id="strategy-dial" min="1" max="3" step="1" value="2" style="flex: 1; cursor: pointer;" title="Survival widens the net · Balanced is standard · Aggressive emphasizes growth">
                 <span id="strategy-label" style="font-family: var(--font-mono); font-weight: 600; color: var(--color-tier2); width: 120px; text-align: right;">Balanced</span>
             </div>
         </section>
@@ -264,12 +243,10 @@
             </div>
             <div class="no-results" id="no-results" style="display: none;">
                 <div class="no-results-icon">◎</div>
-                <h3>No Targets Acquired</h3>
-                <p>No job listings match your current filter criteria.</p>
+                <h3>No Targets In This Zone</h3>
+                <p>No listings match your current zone &amp; filters. Try another zone, widen the recency window, or run an Ingest Sweep.</p>
             </div>
-            <div class="jobs-grid" id="jobs-grid">
-                <!-- Cards injected by JS -->
-            </div>
+            <div class="jobs-grid" id="jobs-grid"></div>
             <div style="text-align: center; margin-top: 2rem;">
                 <button id="load-more-btn" class="btn-load-more" style="display: none;">Load More Targets</button>
             </div>
@@ -285,9 +262,10 @@
                 <p id="modal-job-company" class="modal-company">Company Name</p>
                 <div class="modal-meta-badges">
                     <span id="modal-status-badge" class="badge">Status</span>
-                    <span class="meta-item">Skills: <strong id="modal-skills-count">0</strong></span>
+                    <span class="meta-item">Core: <strong id="modal-core-score">0</strong></span>
+                    <span class="meta-item">Fit: <strong id="modal-fit-score">0%</strong></span>
+                    <span class="meta-item">Culture: <strong id="modal-culture-score">0%</strong></span>
                     <span class="meta-item">Toxicity: <strong id="modal-toxicity-score">0</strong></span>
-                    <span class="meta-item">Leverage: <strong id="modal-leverage-ratio">0.0</strong></span>
                     <span class="meta-item">ATS Align: <strong id="modal-ats-score">0</strong>%</span>
                 </div>
                 <div class="modal-meta-badges" style="margin-top: 0.5rem;">
@@ -296,14 +274,14 @@
                     <span class="meta-item">Seniority: <strong id="modal-seniority">Unknown</strong></span>
                     <span class="meta-item">Location: <strong id="modal-location">Unknown</strong></span>
                     <span class="meta-item">Apply Type: <strong id="modal-apply-type">Unknown</strong></span>
-                    <span class="meta-item">Percentile: <strong id="modal-percentile">Unknown</strong></span>
-                    <span class="meta-item">Title Bonus: <strong id="modal-title-score">0</strong></span>
+                    <span class="meta-item">Percentile: <strong id="modal-percentile">—</strong></span>
+                    <span class="meta-item">Trajectory: <strong id="modal-trajectory">0</strong></span>
                     <span class="meta-item">Posted: <strong id="modal-posted-date">Unknown</strong> (<span id="modal-days-since"></span>)</span>
                     <span class="meta-item">Source: <strong id="modal-source-platform">Unknown</strong></span>
                 </div>
             </header>
             <div class="modal-body">
-                <div class="modal-scroll-area" id="modal-description-content" style="padding: 1rem; background: var(--card-bg); border-radius: var(--border-radius); border: 1px solid var(--border-color);">
+                <div class="modal-scroll-area" id="modal-description-content" style="padding: 1rem; background: var(--bg-card); border-radius: var(--border-radius, 8px); border: 1px solid var(--border-color);">
                     Description Content
                 </div>
             </div>
@@ -322,11 +300,10 @@
                     <button id="modal-save-status-btn" class="btn-secondary-action">Save</button>
                 </div>
                 <div class="modal-footer-right" style="display: flex; gap: 0.5rem;">
-                    <button class="primary" id="modal-apply-btn" onclick="window.open(this.dataset.url, '_blank')" style="display: none;">
+                    <button class="primary" id="modal-apply-btn" onclick="if(this.dataset.url) window.open(this.dataset.url, '_blank', 'noopener')" style="display: none;">
                         Apply Now ↗
                     </button>
                     <button class="secondary" id="modal-copy-btn">
-                        <svg class="copy-icon" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
                         <span id="copy-btn-text">Copy to Clipboard</span>
                     </button>
                 </div>
@@ -335,7 +312,7 @@
     </dialog>
 
     <footer class="main-footer container">
-        <p>Linguistic Signal &amp; Skill-Intersection Pipeline &copy; 2026. Optimized for ARM64 server cores.</p>
+        <p>Job Search Intelligence Platform &copy; 2026 — free &amp; open-source, built for job-seekers. Everything runs locally in your browser.</p>
     </footer>
 
     <script src="app.js"></script>

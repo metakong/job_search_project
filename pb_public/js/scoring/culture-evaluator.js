@@ -1,63 +1,69 @@
 // =====================================================================
-// Corporate Culture Evaluator (Toxicity Scorer) — culture-evaluator.js
+// Corporate Culture Vector — culture-evaluator.js
+// =====================================================================
+// Returns a culture score in [0, 1] where 1 = healthy/green and 0 = hostile.
+// This feeds the Core Score's culture component directly (it is no longer a
+// hardcoded placeholder). It deliberately REWARDS candidate-positive signals —
+// pay transparency above all — rather than only punishing red flags. Heavy
+// toxicity (scams, exploitation) is handled separately by evaluator.js; here we
+// only nudge culture for the milder "yellow flags".
 // =====================================================================
 
-const DICT_CHAOS_BURNOUT = [
-    ["high-intensity", 1], ["wear many hats", 1], ["under pressure", 1], ["total ambiguity", 1]
-];
+(function () {
+    'use strict';
 
-const DICT_EXPLOITATION_BOUNDARIES = [
-    ["we're a family", 3], ["like family", 3], ["work hard, play hard", 3], ["selfless", 3], 
-    ["whatever it takes", 3], ["extra mile", 3], ["flexible schedule required", 3]
-];
+    // Green flags RAISE the score. Explicit salary ranges are weighted most
+    // heavily: pay transparency is the strongest candidate-positive signal and
+    // is legally mandated in a growing number of jurisdictions.
+    const GREEN = [
+        [/\$\s?\d{2,3}(?:,?\d{3})?\s?k?\s*(?:-|–|—|to)\s*\$?\s?\d{2,3}(?:,?\d{3})?\s?k?/i, 0.25],
+        [/work.?life balance/i, 0.12],
+        [/(?:flexible|flex)\s+(?:hours|schedule|work|working)/i, 0.10],
+        [/4.?day work\s?week/i, 0.15],
+        [/(?:professional|career)\s+(?:development|growth|advancement)/i, 0.08],
+        [/mentor(?:ship|ing)/i, 0.07],
+        [/parental leave|maternity|paternity/i, 0.10],
+        [/mental health/i, 0.10],
+        [/(?:health|dental|vision)\s+(?:insurance|coverage|benefits)/i, 0.06],
+        [/\bequity\b|stock options|\brsus?\b/i, 0.07],
+        [/paid (?:time off|vacation|holidays)/i, 0.05],
+        [/\bremote(?:[- ](?:first|friendly))?\b/i, 0.05],
+    ];
 
-const DICT_PUFFERY_IMMATURITY = [
-    ["ninja", 1], ["rockstar", 1], ["guru", 1], ["wizard", 1], ["hustle", 1], 
-    ["grind", 1], ["leave your ego", 1]
-];
+    // Yellow flags LOWER the score (mild; the heavy stuff lives in evaluator.js).
+    const YELLOW = [
+        [/fast.?paced/i, -0.06],
+        [/wear(?:ing)? (?:many|multiple) hats/i, -0.10],
+        [/we(?:'re| are) (?:a |like a |one big )?family/i, -0.12],
+        [/\brock\s?stars?\b|\bninjas?\b|\bgurus?\b/i, -0.05],
+        [/\bhustle\b|\bgrind\b/i, -0.07],
+        [/high.?pressure|thrive under pressure/i, -0.10],
+        [/competitive (?:salary|pay|compensation)/i, -0.05],
+        [/self.?starter/i, -0.04],
+    ];
 
-const DICT_BUREAUCRACY_RED_TAPE = [
-    ["matrixed organization", 1], ["consensus-driven", 1], ["committee approval", 1], 
-    ["strict adherence", 1], ["immutable", 1], ["reporting-heavy", 1]
-];
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
-const ALL_CULTURE_PHRASES = [
-    ...DICT_CHAOS_BURNOUT,
-    ...DICT_EXPLOITATION_BOUNDARIES,
-    ...DICT_PUFFERY_IMMATURITY,
-    ...DICT_BUREAUCRACY_RED_TAPE
-];
+    const cultureEvaluator = {
+        // Returns { cultureScore: 0..1, greenFlags: [], yellowFlags: [] }.
+        evaluate(text) {
+            const desc = (text || '').toString();
+            if (!desc.trim()) return { cultureScore: 0.5, greenFlags: [], yellowFlags: [] };
 
-// Helper to escape regex special chars
-function escapeRegExp(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+            let score = 0.5; // neutral baseline
+            const greenFlags = [];
+            const yellowFlags = [];
 
-// Precompile regexes
-const COMPILED_CULTURE_PHRASES = ALL_CULTURE_PHRASES.map(([phrase, weight]) => {
-    const escaped = escapeRegExp(phrase);
-    const sb = /^[A-Za-z0-9]/.test(phrase) ? '\\b' : '';
-    const eb = /[A-Za-z0-9]$/.test(phrase) ? '\\b' : '';
-    return {
-        pattern: new RegExp(`${sb}${escaped}${eb}`, 'i'),
-        weight,
-        phrase
-    };
-});
-
-const cultureEvaluator = {
-    evaluate(text) {
-        if (!text || text.trim() === '') return 0;
-        
-        let toxicityScore = 0;
-        for (const { pattern, weight } of COMPILED_CULTURE_PHRASES) {
-            if (pattern.test(text)) {
-                toxicityScore += weight;
+            for (const [re, delta] of GREEN) {
+                if (re.test(desc)) { score += delta; greenFlags.push(re.source); }
             }
-        }
-        
-        return toxicityScore;
-    }
-};
+            for (const [re, delta] of YELLOW) {
+                if (re.test(desc)) { score += delta; yellowFlags.push(re.source); }
+            }
 
-window.cultureEvaluator = cultureEvaluator; // Export globally
+            return { cultureScore: clamp(score, 0, 1), greenFlags, yellowFlags };
+        }
+    };
+
+    window.cultureEvaluator = cultureEvaluator; // Export globally
+})();

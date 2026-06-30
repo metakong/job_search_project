@@ -34,8 +34,7 @@ async function fetchWithCORS(url, options = {}) {
 
 async function generateSHA256(company, title, location) {
     const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const locNorm = location.toLowerCase().includes('springfield') ? 'springfieldmo' : norm(location);
-    const raw = `${norm(company)}:${norm(title)}:${locNorm}`;
+    const raw = `${norm(company)}:${norm(title)}:${norm(location)}`;
     
     const msgUint8 = new TextEncoder().encode(raw);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);

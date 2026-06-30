@@ -1,6 +1,0 @@
-# Python requirements for local development, database setup, and test suite execution
-httpx>=0.24.0
-python-dotenv>=1.0.0
-ujson>=5.0.0
-rapidfuzz>=3.0.0
-beautifulsoup4>=4.12.0

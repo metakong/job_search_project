@@ -1,67 +1,59 @@
 # Coding Agent Instructions & Documentation Guidelines
 
-Welcome, Coding Agent! To maintain repository integrity and clear development tracking, you must adhere to the following rules during all project modifications.
+Welcome, Coding Agent! This is a **100% browser-native static PWA** (no backend, no Python, no build step). All logic runs client-side; all data lives in IndexedDB (Dexie). The directory `pb_public/` is the static web root (the `pb_` prefix is legacy from a removed PocketBase era — it is just a folder).
 
 ---
 
 ## Documentation Synchronization Rules
 
-Whenever you introduce a new feature, update the database schema, modify a scraper, or optimize a frontend component, you **MUST** update the following documentation files before completing your task:
+When you add a feature, change the scoring model or schema, modify an extractor, or alter the UI, you **MUST** update:
 
-### 1. `PROJECT_PROGRESS.md`
-- **Location**: [PROJECT_PROGRESS.md](file:///c:/job_search_project/PROJECT_PROGRESS.md)
-- **Role**: A living progress log tracking exact changes made to the codebase.
-- **Action**: Add a new entry under the relevant phase detailing the scope of changes, new components, and optimization details.
-
-### 2. `README.md`
-- **Location**: [README.md](file:///c:/job_search_project/README.md)
-- **Role**: The primary developer overview.
-- **Action**: Update the system architecture diagram, core component lists, and verification steps to align with the new code state.
+1. **`PROJECT_PROGRESS.md`** — append an entry describing the change.
+2. **`README.md`** — keep the architecture diagram, feature list, and zone/scoring description aligned with reality. **Do not advertise features that aren't wired in.**
 
 ---
 
 ## Architectural & Coding Constraints
 
-1. **Performance First**:
-   - Prioritize memory-efficient, non-blocking JavaScript execution.
-   - Offload heavy computing (such as AI embeddings/feature extraction) to Web Workers (`semantic-worker.js`) to prevent main-thread freezing and UI lag.
-   - Pre-compile and reuse regular expression objects at the module/file level rather than constructing them inside loops.
+1. **Module pattern.** Each `js/**` file wraps its logic in an IIFE and exposes a single object on `window` (e.g. `window.scoringCoordinator`). Do not leak helper functions to the global scope.
 
-2. **Memory Management & Persistence**:
-   - Utilize [local-db.js](file:///c:/job_search_project/pb_public/js/storage/local-db.js) and Dexie.js as the primary relational persistence layer.
-   - Avoid loading entire database collections into memory. Utilize Dexie's paginated queries (`.offset()` and `.limit()`) and cursor-based iteration.
-   - Be mindful of IndexedDB transaction and connection limits. Ensure transactions are properly scoped and closed.
+2. **Performance.** Pre-compile regexes at module scope (not in loops). Offload heavy work (AI embeddings) to the Web Worker (`semantic-worker.js`). The dashboard keeps one in-memory snapshot of listings (`allJobsCache`) and filters/sorts/paginates against it — read IndexedDB once per data change, not per keystroke.
 
-3. **Robust Error Handling**:
-   - Wrap IndexedDB and network operations (CORS proxy fetch requests, RSS parsing, API calls) in robust `try-catch` structures. A single malformed RSS feed item, API response, or database fetch error must never halt the scraping/ingestion sweep.
-4. **Never modify test_phase_2.py** (Retained for legacy verification safety).
-5. **UI & Modal Constraints**:
-   - All modals/overlays MUST utilize `overscroll-behavior: contain` to prevent scroll-chaining to the background.
-   - Include internal `overflow-y: auto` to ensure content scroll accessibility.
-   - Trigger a body scroll lock (e.g. via appending a `.no-scroll` class to `document.body` set to `overflow: hidden !important;`) upon modal activation to prevent background scroll traps.
+3. **Robust error handling.** Wrap every network/IndexedDB/parse operation in `try/catch`. A single malformed feed item or failed request must never halt an ingestion sweep or crash the dashboard.
+
+4. **Security (mandatory).**
+   - Untrusted text (job descriptions, titles, company names) is rendered through `escapeHtml()` or, for markdown, `renderMarkdownSafe()` (marked → **DOMPurify**). Never `innerHTML` raw third-party content.
+   - Apply/job URLs from feeds must pass through `safeUrl()` (http/https only) before use.
+   - CSV export uses `csvCell()` (formula-injection guard).
+   - Never commit secrets; there is no `.env` and no server credential in this project.
+
+5. **UI & Modal constraints.** Modals use `overscroll-behavior: contain`, internal `overflow-y: auto`, and a `.no-scroll` body lock while open.
 
 ---
 
-## Phase 11 / PWA Refactor Architecture
+## The Scoring Engine (the heart)
 
-### Data Persistence Layer
-- **Dexie.js IndexedDB**: Primary relational storage is configured in [local-db.js](file:///c:/job_search_project/pb_public/js/storage/local-db.js) and accessed via [db-adapter.js](file:///c:/job_search_project/pb_public/js/storage/db-adapter.js).
-- **Collections Schema**: Persists collections client-side including `job_listings`, `blacklisted_companies`, and `filter_profiles`.
+Every job is placed on two candidate-relative axes and routed to a zone. **Keep these faithful**:
 
-### Ingestion Streams (Client-Side)
-- **RSS Feeds**: [rss-adapter.js](file:///c:/job_search_project/pb_public/js/extractors/rss-adapter.js) fetches and parses Indeed RSS feeds directly.
-- **Remotive APIs**: [remotive-api.js](file:///c:/job_search_project/pb_public/js/extractors/remotive-api.js) fetches Remote developer/sales categories.
-- **Sitemaps**: [sitemap-parser.js](file:///c:/job_search_project/pb_public/js/extractors/sitemap-parser.js) scans XML links with a concurrency limit of 3.
-- **CORS Bypass**: All requests route through the Cloudflare CORS proxy setup (`cors-proxy/worker.js`).
+- **Delta-X (fit, 0–1):** résumé-driven overlap (`skill-matcher.overlapRatio`) + supplementary skills + optional semantic similarity.
+- **Delta-Y (trajectory):** job seniority − candidate baseline seniority.
+- **Zones:** Strike (aligned/lateral), Moonshot (reach up), Safety (step down in-field), Inferno (toxicity override), `noise` (below relevance floor; hidden). The **Strategy Dial** (1 Survival / 2 Balanced / 3 Aggressive) reshapes thresholds.
+- **Core Score (0–100):** transparent blend — 55% fit, 25% pay-vs-floor, 20% culture. No hidden constants.
 
-### Scoring & Filtering Logic
-- **Toxicity & Culture**: Evaluated via [culture-evaluator.js](file:///c:/job_search_project/pb_public/js/scoring/culture-evaluator.js) utilizing red-flag phrases and proximity gates.
-- **Skill Matching**: Handled by [skill-matcher.js](file:///c:/job_search_project/pb_public/js/scoring/skill-matcher.js) using set-based keyword intersections.
-- **Industry Tagger**: Categorizes jobs using a first-match-wins algorithm in [industry-classifier.js](file:///c:/job_search_project/pb_public/js/scoring/industry-classifier.js).
-- **ATS Alignment Scorer**: Reads candidate PDF resumes with `PDF.js` via [resume-parser.js](file:///c:/job_search_project/pb_public/js/ai/resume-parser.js) and computes keyword overlap.
-- **Kill Switch Status**: Removes MLM/Predatory, Regulated/Non-Relevant, Trades/Labor, Clinical, and Hard-Personal-Disqualifier (degree mandates, travel, gov't) exclusions.
+Modules:
+- `scoring/evaluator.js` — **toxicity engine**: additive, weighted red-flag taxonomy mapped to the 9 Circles. Calibrated so Inferno is a *minority*; a single weak cliché never triggers it.
+- `scoring/culture-evaluator.js` — **culture vector (0–1)**: rewards green flags (pay transparency first), penalizes yellow flags. Feeds the Core Score.
+- `scoring/skill-matcher.js` — résumé keyword extraction + overlap (the primary fit signal) + supplementary skill list.
+- `scoring/industry-classifier.js` — first-match-wins industry tag.
+- `scoring/scoring-coordinator.js` — orchestrates all of the above; assigns zone, ghost/stale/duplicate flags, and percentiles.
 
-### Dashboard Stack
-- **Fuse.js (CDN)**: Performs client-side fuzzy blacklist matching.
-- **marked.js (CDN)**: Handles markdown description rendering in the details modal.
-- **Data Portability**: Facilitates backups/restores via [data-portability.js](file:///c:/job_search_project/pb_public/js/storage/data-portability.js) and shows a 30-day reminder banner.
+**Calibration discipline:** when changing toxicity weights or zone thresholds, validate the distribution (Inferno should stay a minority; no zone should swallow everything). A Node harness can load these modules with a stub `window` and run synthetic + realistic samples.
+
+---
+
+## Other Components
+- **Storage:** `storage/local-db.js` (Dexie schema + migrations), `storage/db-adapter.js` (CRUD, filtering, `getBlacklistNames`, `persistJobs`), `storage/data-portability.js` (JSON backup/restore).
+- **Extractors:** `extractors/rss-adapter.js`, `remotive-api.js`, `sitemap-parser.js`; Greenhouse/Lever ATS watchlists are polled in `app.js`. All cross-origin requests go through the CORS proxy (`cors-proxy/worker.js`, or the public default).
+- **Résumé:** `ai/resume-parser.js` (PDF.js, local) calibrates baseline seniority + salary floor.
+- **Optional AI:** `ai/transformers-engine.js` + `workers/semantic-worker.js` (opt-in semantic matching; must degrade gracefully to keyword matching).
+- **Dashboard:** `index.html`, `app.js`, `style.css`; Fuse.js (fuzzy blacklist), marked + DOMPurify (safe markdown), service worker `sw.js` (offline).

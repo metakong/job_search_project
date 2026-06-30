@@ -1,27 +1,20 @@
 {
-  "name": "Linguistic Signal & Technical Leverage Dashboard",
-  "short_name": "JobSignal",
-  "description": "Progressive Web App target acquisition job search engine",
+  "name": "Job Search Intelligence Platform",
+  "short_name": "JobIntel",
+  "description": "A free, browser-native, candidate-first job search platform: discover, score, and track opportunities locally.",
+  "id": "/",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#1a1a1a",
+  "background_color": "#111111",
   "theme_color": "#111111",
   "orientation": "any",
   "icons": [
     {
-      "src": "https://img.icons8.com/nolan/96/target.png",
-      "sizes": "96x96",
-      "type": "image/png"
-    },
-    {
-      "src": "https://img.icons8.com/nolan/256/target.png",
-      "sizes": "256x256",
-      "type": "image/png"
-    },
-    {
-      "src": "https://img.icons8.com/nolan/512/target.png",
-      "sizes": "512x512",
-      "type": "image/png"
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ]
 }

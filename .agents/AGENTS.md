@@ -1,43 +1,14 @@
-# Coding Agent Instructions & Documentation Guidelines
+# Coding Agent Instructions (summary)
 
-Welcome, Coding Agent! To maintain repository integrity and clear development tracking, you must adhere to the following rules during all project modifications.
+This project is a **browser-native static PWA** (no backend/Python/build step). `pb_public/` is the static web root. See the full guide in [`../AGENTS.md`](../AGENTS.md).
 
----
+## Must-follow constraints
+1. **Docs:** update `PROJECT_PROGRESS.md` and `README.md` with every meaningful change. Never document features that aren't wired in.
+2. **Modules:** each `js/**` file is an IIFE exposing one `window.*` object; no global helpers.
+3. **Performance:** pre-compile regexes at module scope; heavy AI work goes to `semantic-worker.js`; the dashboard filters an in-memory cache (`allJobsCache`), reading IndexedDB once per data change.
+4. **Error handling:** wrap all network/IndexedDB/parse ops in `try/catch`; one bad item must never halt a sweep.
+5. **Security:** render untrusted text via `escapeHtml()` / `renderMarkdownSafe()` (marked → DOMPurify); validate URLs with `safeUrl()` (http/https only); CSV via `csvCell()`. No secrets in the repo.
+6. **UI/modals:** `overscroll-behavior: contain`, internal `overflow-y: auto`, `.no-scroll` body lock while open.
 
-## Documentation Synchronization Rules
-
-Whenever you introduce a new feature, update an existing database schema, modify a script, or optimize an ETL phase, you **MUST** update the following documentation files before completing your task:
-
-### 1. `PROJECT_PROGRESS.md`
-- **Location**: [PROJECT_PROGRESS.md](file:///c:/job_search_project/PROJECT_PROGRESS.md)
-- **Role**: A living progress log tracking exact changes made to the codebase.
-- **Action**: Add a new entry under the relevant phase detailing the scope of changes, new components, and optimization details.
-
-### 2. `README.md`
-- **Location**: [README.md](file:///c:/job_search_project/README.md)
-- **Role**: The primary developer overview.
-- **Action**: Update the system architecture diagram, core component lists, and verification steps to align with the new code state.
-
----
-
-## Architectural & Coding Constraints
-
-1. **Performance First**:
-   - Prioritize memory-efficient, non-blocking JavaScript execution.
-   - Offload heavy computing (such as AI embeddings/feature extraction) to Web Workers (`semantic-worker.js`) to prevent main-thread freezing and UI lag.
-   - Pre-compile and reuse regular expression objects at the module/file level rather than constructing them inside loops.
-
-2. **Memory Management & Persistence**:
-   - Utilize [local-db.js](file:///c:/job_search_project/pb_public/js/storage/local-db.js) and Dexie.js as the primary relational persistence layer.
-   - Avoid loading entire database collections into memory. Utilize Dexie's paginated queries (`.offset()` and `.limit()`) and cursor-based iteration.
-   - Be mindful of IndexedDB transaction and connection limits. Ensure transactions are properly scoped and closed.
-
-3. **Robust Error Handling**:
-   - Wrap IndexedDB and network operations (CORS proxy fetch requests, RSS parsing, API calls) in robust `try-catch` structures. A single malformed RSS feed item, API response, or database fetch error must never halt the scraping/ingestion sweep.
-
-4. **Never modify test_phase_2.py** (Retained for legacy verification safety).
-
-5. **UI & Modal Constraints**:
-   - All modals/overlays MUST utilize `overscroll-behavior: contain` to prevent scroll-chaining to the background.
-   - Include internal `overflow-y: auto` to ensure content scroll accessibility.
-   - Trigger a body scroll lock (e.g. via appending a `.no-scroll` class to `document.body` set to `overflow: hidden !important;`) upon modal activation to prevent background scroll traps.
+## Scoring (keep faithful)
+Two candidate-relative axes — **Delta-X** (résumé fit) and **Delta-Y** (seniority trajectory) — route each job into **Strike / Moonshot / Safety / Inferno** (+ hidden `noise`). The **Strategy Dial** reshapes thresholds. **Core Score** = 55% fit + 25% pay + 20% culture. Toxicity (`evaluator.js`) is additive/weighted and calibrated so **Inferno stays a minority** — a single cliché never triggers it. Validate zone/toxicity distributions when tuning.
