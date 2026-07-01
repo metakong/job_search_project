@@ -73,3 +73,6 @@ The browser environment is hostile. Cross-Origin Resource Sharing (CORS) proxies
 When you execute a refactor, fix a bug, or add a feature, you **MUST** update:
 1.  **`PROJECT_PROGRESS.md`**: Append a clear, concise log of what was changed and why.
 2.  **`README.md`**: Ensure the architecture diagram, UI descriptions, and feature lists match the literal reality of the codebase. Do not advertise features that are theoretically planned but not yet wired in.
+
+There is also a third, **non-binding** doc:
+3.  **`BRAINSTORMING.md`**: a living scratchpad for ideas, new features, data sources, and architectural explorations that **may or may not** get implemented. Nothing there is a commitment or a spec. Use it to capture and evaluate proposals (with honest verdicts and *why*) **before** they become work. When an idea graduates into real work it moves to `PROJECT_PROGRESS.md` + the code; rejected ideas stay in `BRAINSTORMING.md` with the rejection rationale so they are not re-litigated. Judge every entry against this constitution (zero-backend North Star, honest math) — do **not** treat brainstormed items as approved architecture.

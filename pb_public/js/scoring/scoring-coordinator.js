@@ -359,6 +359,7 @@
             const NOISE_FIT    = cfg.NOISE_FIT_FLOOR ?? 0.18;
             const STRIKE_FIT   = cfg.STRIKE_FIT_MIN ?? 0.40;
             const MOON_FIT     = cfg.MOONSHOT_FIT_MIN ?? 0.30;
+            const SAFETY_FIT   = cfg.SAFETY_FIT_MIN ?? STRIKE_FIT;
 
             const eligible = jobsList.filter(j => j.is_eligible !== false);
             // Idempotent reset so re-scoring an existing cache re-routes cleanly.
@@ -395,26 +396,46 @@
             const relevant = clean.filter(j => j.computed_zone !== 'noise');
 
             // ── 4. ZONE by trajectory (Delta-Y), gated by fit (Delta-X).
+            // CRITICAL (AGENTS.md Law 3): the Safety Net is a HIGH-fit fallback —
+            // "Delta-X > High Threshold ... NOT a trash can for irrelevant jobs."
+            // It used to be the unconditional else-bucket, so a step-down / lateral /
+            // unknown-level role with only 18–40% résumé fit (the domain gate crushes
+            // OFF-field roles to ~0.1–0.25) still landed in the Safety Net — the exact
+            // "roles I'm not qualified for" leak. Safety now enforces SAFETY_FIT (the
+            // proven Strike bar): a nominal step-down you are NOT a strong in-field
+            // match for is hidden as noise, not filed under Safety.
             for (const j of relevant) {
                 const dy  = j.trajectory_effective;   // job − dual-baseline anchor; null if level unknown
                 const fit = j.delta_x || 0;
                 let zone;
                 if (dy === null || dy === undefined) {
-                    // Unknown level → can't claim a reach. Strong fit = Strike, else fallback.
-                    zone = (fit >= STRIKE_FIT) ? 'strike' : 'safety';
+                    // Unknown level → can't claim a reach. Strong fit = Strike, else Safety-if-qualified.
+                    zone = (fit >= STRIKE_FIT) ? 'strike' : (fit >= SAFETY_FIT ? 'safety' : 'noise');
                 } else if (dy >= 2) {
-                    zone = (fit >= MOON_FIT) ? 'moonshot' : 'safety';        // clear reach up
+                    zone = (fit >= MOON_FIT) ? 'moonshot'                    // clear reach up
+                         : (fit >= SAFETY_FIT) ? 'safety'
+                         : 'noise';
                 } else if (dy === 1) {
                     zone = (fit >= STRIKE_FIT) ? 'strike'                    // qualified step-up
                          : (fit >= MOON_FIT)   ? 'moonshot'                  // partial-fit reach
-                         : 'safety';
+                         : (fit >= SAFETY_FIT) ? 'safety'
+                         : 'noise';
                 } else if (dy <= -1) {
-                    zone = 'safety';                                         // step down in-field
+                    zone = (fit >= SAFETY_FIT) ? 'safety' : 'noise';         // step down, but must be a real in-field match
                 } else {
-                    zone = (fit >= STRIKE_FIT) ? 'strike' : 'safety';        // lateral
+                    zone = (fit >= STRIKE_FIT) ? 'strike' : (fit >= SAFETY_FIT ? 'safety' : 'noise'); // lateral
                 }
                 j.computed_zone = zone;
                 j.zone_rank = 0;
+            }
+
+            // Anti-blank-screen guard — now also covers the new Safety fit gate. If the
+            // ENTIRE relevant pool got demoted to 'noise' (a genuinely off-target batch,
+            // or a résumé whose fit never clears SAFETY_FIT), show it honestly in the
+            // Safety Net rather than rendering a "Zero Results" screen. Nothing weak ever
+            // reaches Strike/Moonshot; the honest fallback is always the Safety Net.
+            if (relevant.length && !relevant.some(j => j.computed_zone !== 'noise')) {
+                for (const j of relevant) j.computed_zone = 'safety';
             }
 
             // ── 5. STRATEGY TIERS within each zone — sliced by transition friction

@@ -185,6 +185,9 @@
                 // Competency shape from the résumé (gates Delta-X by domain).
                 const domainAffinity = (extractedResumeText && window.competencyProfiler)
                     ? window.competencyProfiler.profileResume(extractedResumeText).affinity : null;
+                // "Highest & best use" — years-per-skill signature.
+                const yoeProfile = (extractedResumeText && window.yoeProfiler)
+                    ? window.yoeProfiler.computeProfile(extractedResumeText) : null;
 
                 await window.dbAdapter.saveUserProfile({
                     location: document.getElementById('wizard-location').value,
@@ -194,7 +197,8 @@
                     peakSeniority: peak,
                     recentSeniority: recent,
                     domainAffinity,
-                    calibrationVersion: 3, // these are user-confirmed → don't auto-migrate over them
+                    yoeProfile,
+                    calibrationVersion: 4, // these are user-confirmed → don't auto-migrate over them
                     categories,
                     search_queries,
                     resumeText: extractedResumeText,

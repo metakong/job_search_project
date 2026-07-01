@@ -3,7 +3,7 @@
 // =====================================================================
 
 const CONFIG = {
-    VERSION: '13.7.0',
+    VERSION: '13.8.0',
     SCORING_CHUNK_SIZE: 25,
     FETCH_THROTTLE_MS: 500,
     FETCH_TIMEOUT_MS: 8000,      // per-attempt CORS fetch timeout (AbortController); keeps a fully-blocked sweep responsive
@@ -31,6 +31,17 @@ const CONFIG = {
     NOISE_FIT_FLOOR: 0.18,           // Delta-X below this = irrelevant → hidden (unless pool is all-weak)
     STRIKE_FIT_MIN: 0.40,            // Delta-X needed for the Strike Zone (well-aligned)
     MOONSHOT_FIT_MIN: 0.30,          // Delta-X needed to call a reach-up a Moonshot (not noise)
+    // AGENTS.md Law 3: the Safety Net is a HIGH-fit fallback ("Delta-X > High
+    // Threshold ... NOT a trash can"). It was previously the unconditional
+    // else-bucket, so any step-down/lateral/unknown role that merely cleared the
+    // 0.18 noise floor landed there — the "roles I'm not qualified for in my Safety
+    // Net" leak. Calibrated against the owner's real résumé + the domain gate, which
+    // produces a CLEAN BIMODAL split: genuine in-field roles score Delta-X ≈ 0.37–0.39,
+    // off-field/unqualified roles are crushed to ≈ 0.00–0.02. 0.30 sits in the empty
+    // valley between the two clusters: it keeps real in-field step-downs in Safety
+    // while excluding every off-field role. (The absolute STRIKE bar of 0.40 is
+    // intentionally higher — Strike is the strongest, clean-lateral claim.)
+    SAFETY_FIT_MIN: 0.30,            // Delta-X a step-down/lateral must clear to be a real (in-field) Safety match
     LOW_VOLUME_THRESHOLD: 24,        // per-zone: below this, disable 1/3 slicing & show whole bucket
 
     STRATEGY_TIERS: { SURVIVAL: 1, BALANCED: 2, AGGRESSIVE: 3 },

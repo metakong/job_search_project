@@ -48,6 +48,11 @@ const statTier1         = document.getElementById('stat-tier1');
 const statTier2         = document.getElementById('stat-tier2');
 const statAvgCore       = document.getElementById('stat-avg-core');
 
+const bestUseSection    = document.getElementById('best-use-section');
+const bestUseHard       = document.getElementById('best-use-hard');
+const bestUseSoft       = document.getElementById('best-use-soft');
+const bestUseSub        = document.getElementById('best-use-sub');
+
 const detailsModal      = document.getElementById('details-modal');
 const modalJobTitle     = document.getElementById('modal-job-title');
 const modalJobCompany   = document.getElementById('modal-job-company');
@@ -118,6 +123,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // zones re-route correctly without re-running setup.
     const recalibrated = await ensureCalibration(profile);
 
+    // Render the "Highest & Best Use" panel from the (possibly just-recalibrated) profile.
+    renderBestUse(recalibrated ? await window.dbAdapter.getUserProfile() : profile);
+
     await loadAllJobs();
     fetchData(1, false);
 
@@ -130,7 +138,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Re-derive the dual-baseline seniority from a stored résumé when the calibration
 // engine version has advanced. Versioned & one-shot so it never clobbers a user's
 // later manual edits. Returns true if the profile changed (→ trigger a re-score).
-const CALIBRATION_VERSION = 3;
+const CALIBRATION_VERSION = 4;   // v4: adds yoeProfile ("highest & best use")
 async function ensureCalibration(profile) {
     try {
         if (!profile || !profile.resumeText || profile.resumeText.length < 50) return false;
@@ -142,6 +150,7 @@ async function ensureCalibration(profile) {
             baselineSeniority: cal.peakSeniority,
             softSkills: cal.softSkills,
             domainAffinity: cal.domainAffinity,       // competency shape → gates Delta-X by domain
+            yoeProfile: cal.yoeProfile,               // years-per-skill → "highest & best use" panel
             calibrationVersion: CALIBRATION_VERSION
         });
         console.log(`[App] Re-calibrated résumé → Peak=${cal.peakSeniority}, Recent=${cal.recentSeniority}, domains=${cal.domainAffinity ? Object.entries(cal.domainAffinity).filter(([, v]) => v > 0.3).map(([k]) => k).join(',') : 'n/a'}.`);
@@ -155,6 +164,34 @@ async function ensureCalibration(profile) {
 // ── In-memory cache ─────────────────────────────────────────────────────
 async function loadAllJobs() {
     allJobsCache = await window.dbAdapter.getAllJobs();
+}
+
+// ── "Highest & Best Use" panel ──────────────────────────────────────────
+// Renders the candidate's career signature (top hard + soft skills by cumulative
+// years) from the persisted yoeProfile. Hidden entirely when there's no résumé.
+function renderBestUse(profile) {
+    if (!bestUseSection) return;
+    const p = profile && profile.yoeProfile;
+    if (!p || !((p.hard && p.hard.length) || (p.soft && p.soft.length))) {
+        bestUseSection.style.display = 'none';
+        return;
+    }
+    const rows = (list) => {
+        if (!list || !list.length) return '<div class="best-use-empty">No skills detected yet.</div>';
+        const max = Math.max(...list.map(s => s.years), 1);
+        return list.slice(0, 5).map(s => `
+            <div class="best-use-row">
+                <span class="best-use-skill">${escapeHtml(s.skill)}</span>
+                <span class="best-use-bar"><span class="best-use-bar-fill" style="width:${Math.max(6, Math.round(s.years / max * 100))}%"></span></span>
+                <span class="best-use-years">${s.years}y</span>
+            </div>`).join('');
+    };
+    bestUseHard.innerHTML = rows(p.hard);
+    bestUseSoft.innerHTML = rows(p.soft);
+    if (bestUseSub) {
+        bestUseSub.textContent = `Top skills by cumulative years across ${p.roleCount} dated role${p.roleCount === 1 ? '' : 's'}${p.totalYears ? ` (~${p.totalYears}y career)` : ''} — your résumé is the source.`;
+    }
+    bestUseSection.style.display = 'block';
 }
 
 // =====================================================================

@@ -7,7 +7,7 @@
 // (no @latest) for reproducible offline behavior.
 // =====================================================================
 
-const CACHE_NAME = 'job-search-v5';
+const CACHE_NAME = 'job-search-v7';
 
 // Same-origin app shell — must all cache for a reliable offline experience.
 // Keep this list in sync with the <script> tags in index.html.
@@ -20,7 +20,7 @@ const CORE_ASSETS = [
     './js/ai/resume-parser.js', './js/ai/transformers-engine.js',
     './js/scoring/ambiguity-index.js', './js/scoring/transition-friction.js',
     './js/scoring/evaluator.js', './js/scoring/skill-matcher.js', './js/scoring/competency-profiler.js',
-    './js/scoring/culture-evaluator.js',
+    './js/scoring/yoe-profiler.js', './js/scoring/culture-evaluator.js',
     './js/scoring/industry-classifier.js', './js/scoring/scoring-coordinator.js',
     './js/features/setup-wizard.js'
 ];

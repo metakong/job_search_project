@@ -50,6 +50,7 @@
     <script src="js/scoring/evaluator.js"></script>
     <script src="js/scoring/skill-matcher.js"></script>
     <script src="js/scoring/competency-profiler.js"></script>
+    <script src="js/scoring/yoe-profiler.js"></script>
     <script src="js/scoring/culture-evaluator.js"></script>
     <script src="js/scoring/industry-classifier.js"></script>
     <script src="js/scoring/scoring-coordinator.js"></script>
@@ -99,6 +100,26 @@
                 <div class="stat-card avg-leverage">
                     <div class="stat-value" id="stat-avg-core">0</div>
                     <div class="stat-label">Avg Core Score</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Highest & Best Use (career signature from the résumé) -->
+        <section id="best-use-section" class="best-use-section" style="display:none;">
+            <div class="best-use-card">
+                <div class="best-use-header">
+                    <h3>🎓 Your Highest &amp; Best Use</h3>
+                    <span class="best-use-sub" id="best-use-sub">Top skills by cumulative years, derived from your résumé</span>
+                </div>
+                <div class="best-use-cols">
+                    <div class="best-use-col">
+                        <div class="best-use-col-title">💪 Hard Skills</div>
+                        <div id="best-use-hard" class="best-use-list"></div>
+                    </div>
+                    <div class="best-use-col">
+                        <div class="best-use-col-title">🤝 Soft Skills</div>
+                        <div id="best-use-soft" class="best-use-list"></div>
+                    </div>
                 </div>
             </div>
         </section>

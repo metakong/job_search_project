@@ -129,7 +129,10 @@
                 domainAffinity = window.competencyProfiler.profileResume(text || '').affinity;
             }
 
-            return { peakSeniority, recentSeniority, salaryFloor, softSkills, domainAffinity };
+            // "Highest & best use" — cumulative years per skill → top hard + top soft.
+            const yoeProfile = window.yoeProfiler ? window.yoeProfiler.computeProfile(text || '') : null;
+
+            return { peakSeniority, recentSeniority, salaryFloor, softSkills, domainAffinity, yoeProfile };
         },
 
         // Persist résumé text + calibration in one shot (kept for any direct caller).
@@ -144,7 +147,8 @@
                 recentSeniority: cal.recentSeniority,
                 salaryFloor: cal.salaryFloor,
                 softSkills: cal.softSkills,
-                domainAffinity: cal.domainAffinity
+                domainAffinity: cal.domainAffinity,
+                yoeProfile: cal.yoeProfile
             });
             console.log(`[Resume Parser] Saved. Peak=${cal.peakSeniority}, Recent=${cal.recentSeniority}, Floor=${cal.salaryFloor}`);
             return true;

@@ -65,5 +65,16 @@ db.version(6).stores({
     localStorage.setItem('requires_rescore_v13', 'true');
 });
 
+// v7 — Phase 13.8 Safety-Net fit gate (no new fields). The Safety Net used to be
+// the unconditional else-bucket; it now enforces SAFETY_FIT_MIN, so step-down /
+// lateral / unknown-level roles the candidate isn't a real match for are re-routed
+// out of Safety (→ noise). Force a re-score so existing listings re-distribute.
+db.version(7).stores({
+    job_listings: 'id, title, company_name, application_status, computed_zone, location_type, industry, is_ghost_job, is_eligible, days_since_posted, match_score, match_percentile, payload_hash, posted_at, ambiguity_index, transition_friction, strategy_tier, zone_rank'
+}).upgrade(() => {
+    console.log('[Storage] Migrated JobSearchDB schema to v7 (Phase 13.8 Safety-Net fit-gate re-score).');
+    localStorage.setItem('requires_rescore_v13', 'true');
+});
+
 console.log('[Storage] Dexie IndexedDB initialized.');
 window.localDB = db; // Export to window for global availability

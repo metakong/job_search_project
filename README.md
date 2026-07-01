@@ -52,6 +52,7 @@ Changing the dial instantly filters your feed to reveal ONLY that distinct subse
 | **Zero Setup** | No Python, no Node, no database to run. Open in a browser → follow the wizard → done. |
 | **Offline-Capable PWA** | Installable; works offline after first load. |
 | **Résumé-Driven Matching** | Upload your PDF résumé (parsed locally, never uploaded). It defines your fit profile and auto-calibrates your **peak** and **realistic-current** seniority (a dual-baseline anchor that keeps the zones honest for non-linear careers) plus your salary floor. Every value is editable in the wizard. |
+| **Highest & Best Use** | A career-signature panel: your top hard + soft skills ranked by **cumulative years**, sliced from your résumé's dated roles. Overlapping and self-employed time are honestly discounted so the ranking reflects real, recruiter-credited experience. |
 | **Calibrated Toxicity Detection** | Additive, weighted red-flag scoring grounded in real-world hiring-scam and exploitation research. Genuinely toxic posts get mapped to the 9 Circles of Hell; a single cliché never sends a job there. |
 | **Ghost Job Detection** | Flags stale, salary-free, perpetual-pipeline listings likely posted to farm résumés. |
 | **Culture Score** | Rewards green flags — pay transparency above all — and penalizes yellow flags. |
@@ -143,15 +144,20 @@ pb_public/                 # ← Serve this directory (static web root)
     ├── ai/                            # resume-parser, transformers-engine (opt-in)
     ├── workers/semantic-worker.js     # embedding worker (opt-in)
     ├── scoring/                       # evaluator, skill-matcher, competency-profiler,
-    │                                  #   culture-evaluator, industry-classifier, scoring-coordinator
+    │                                  #   yoe-profiler, culture-evaluator, industry-classifier, scoring-coordinator
     └── features/setup-wizard.js
+
+tools/                     # build-time Node scripts (not shipped to the browser)
+AGENTS.md                  # architecture constitution & coding constraints
+PROJECT_PROGRESS.md        # chronological log of everything shipped
+BRAINSTORMING.md           # non-binding scratchpad for ideas / next steps (may or may not ship)
 ```
 
 ---
 
 ## 🤝 Contributing
 
-Contributions welcome. Please read [AGENTS.md](AGENTS.md) for the architecture and coding constraints first. The scoring engine has a Node-runnable simulation harness; keep Inferno a calibrated minority and keep the zones faithful to their definitions.
+Contributions welcome. Please read [AGENTS.md](AGENTS.md) for the architecture and coding constraints first. The scoring engine has a Node-runnable simulation harness; keep Inferno a calibrated minority and keep the zones faithful to their definitions. Early-stage ideas and exploratory proposals live in [BRAINSTORMING.md](BRAINSTORMING.md) (non-binding — nothing there is a commitment until it ships and is logged in [PROJECT_PROGRESS.md](PROJECT_PROGRESS.md)).
 
 ## 🗺️ Roadmap
 - [ ] AI cover-letter & résumé-tailoring assistant (bring-your-own-key)
