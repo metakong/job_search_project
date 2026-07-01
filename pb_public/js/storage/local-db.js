@@ -45,5 +45,25 @@ db.version(4).stores({
     localStorage.setItem('requires_rescore_v13', 'true');
 });
 
+// v5 — Phase 13.6 dual-baseline anchor + salary/zone LOGIC change (no new fields).
+// Force a re-score so existing listings re-route off the corrected effective
+// trajectory (fixes the empty-Moonshot / Safety-Net-as-trash-can drift).
+db.version(5).stores({
+    job_listings: 'id, title, company_name, application_status, computed_zone, location_type, industry, is_ghost_job, is_eligible, days_since_posted, match_score, match_percentile, payload_hash, posted_at, ambiguity_index, transition_friction, strategy_tier, zone_rank'
+}).upgrade(() => {
+    console.log('[Storage] Migrated JobSearchDB schema to v5 (Phase 13.6 dual-baseline re-score).');
+    localStorage.setItem('requires_rescore_v13', 'true');
+});
+
+// v6 — Phase 13.7 domain-competency Delta-X gate (no new fields). Re-score so
+// out-of-domain roles (e.g. software engineering for a sales/ops candidate) are
+// crushed off the board instead of false-matching on shared buzzwords.
+db.version(6).stores({
+    job_listings: 'id, title, company_name, application_status, computed_zone, location_type, industry, is_ghost_job, is_eligible, days_since_posted, match_score, match_percentile, payload_hash, posted_at, ambiguity_index, transition_friction, strategy_tier, zone_rank'
+}).upgrade(() => {
+    console.log('[Storage] Migrated JobSearchDB schema to v6 (Phase 13.7 domain-competency re-score).');
+    localStorage.setItem('requires_rescore_v13', 'true');
+});
+
 console.log('[Storage] Dexie IndexedDB initialized.');
 window.localDB = db; // Export to window for global availability

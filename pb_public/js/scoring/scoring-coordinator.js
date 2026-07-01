@@ -47,30 +47,52 @@
         },
 
         parseSalary(desc) {
-            const salAnnualRe = /\$\s*([\d,]+)\s*(?:k|K)?\s*(?:–|-|to)\s*\$\s*([\d,]+)\s*(?:k|K)?/i;
+            // Per-number 'k' capture (m[2]/m[4]) so "$120k–$150k" and "$120,000–$150,000"
+            // both parse, and a lone "k" never inflates the OTHER number.
+            const salAnnualRe = /\$\s*([\d,]+(?:\.\d+)?)\s*(k|K)?\s*(?:–|-|—|to)\s*\$?\s*([\d,]+(?:\.\d+)?)\s*(k|K)?/;
             const salHourlyRe = /\$\s*([\d.]+)\s*(?:per\s+hour|\/\s*hr|\/\s*hour|an hour|hourly)/i;
-            const salSingleRe = /(?:up\s+to|starting\s+at|from|salary of)\s+\$\s*([\d,]+)\s*(k|K)?/i;
+            const salSingleRe = /(?:up\s+to|starting\s+at|from|salary of)\s+\$\s*([\d,]+(?:\.\d+)?)\s*(k|K)?/i;
             const parseNum = s => parseFloat(String(s).replace(/,/g, '')) || 0.0;
 
             let m = salAnnualRe.exec(desc);
             if (m) {
-                let lo = parseNum(m[1]), hi = parseNum(m[2]);
-                if (m[0].toLowerCase().includes('k')) { if (lo < 1000) lo *= 1000; if (hi < 1000) hi *= 1000; }
-                if (lo > 0 || hi > 0) return { min: lo, max: hi, parseable: true };
+                let lo = parseNum(m[1]); if (m[2]) lo *= 1000;
+                let hi = parseNum(m[3]); if (m[4]) hi *= 1000;
+                // If either side carried a 'k', treat sub-1000 bare numbers on the
+                // other side as thousands too (e.g. "$120k - 150" → 120k–150k).
+                if (m[2] || m[4]) { if (lo > 0 && lo < 1000) lo *= 1000; if (hi > 0 && hi < 1000) hi *= 1000; }
+                if (lo > 0 || hi > 0) return this._sanitizeSalary(lo, hi);
             }
             m = salHourlyRe.exec(desc);
             if (m) {
                 const hourly = parseFloat(m[1]) || 0;
                 const annual = Math.round(hourly * 2080);
-                if (annual > 0) return { min: annual, max: annual, parseable: true };
+                if (annual > 0) return this._sanitizeSalary(annual, annual);
             }
             m = salSingleRe.exec(desc);
             if (m) {
                 let val = parseNum(m[1]);
                 if (m[2] && m[2].toLowerCase() === 'k' && val < 1000) val *= 1000;
-                if (val > 0) return { min: val, max: val, parseable: true };
+                if (val > 0) return this._sanitizeSalary(val, val);
             }
             return { min: 0.0, max: 0.0, parseable: false };
+        },
+
+        // Coherence guard shared by every salary path (parser + feed-supplied
+        // values). Swaps reversed ranges, and rejects figures too low to be a
+        // real US annual salary (foreign-currency / hourly-misread artifacts like
+        // "$5k–$20k" or "$312k–$52k") so the UI shows an honest "Salary N/A"
+        // instead of misleading numbers that also skew the pay component.
+        _sanitizeSalary(lo, hi, minPlausible) {
+            lo = Number(lo) || 0; hi = Number(hi) || 0;
+            if (lo > 0 && hi > 0 && lo > hi) { const t = lo; lo = hi; hi = t; } // swap reversed
+            const floor = minPlausible || (window.CONFIG && window.CONFIG.SALARY_MIN_PLAUSIBLE_ANNUAL) || 18000;
+            const top = hi || lo;
+            const bottom = (lo > 0 && hi > 0) ? Math.min(lo, hi) : top;
+            if (top > 0 && top < floor) return { min: 0, max: 0, parseable: false };   // whole range too low
+            if (bottom > 0 && bottom < 7000) return { min: 0, max: 0, parseable: false }; // impossibly low floor → foreign currency
+            if (lo > 0 && hi > 0 && hi / lo > 25) return { min: 0, max: 0, parseable: false }; // absurd spread
+            return { min: lo, max: hi, parseable: (lo > 0 || hi > 0) };
         },
 
         getRecencyMultiplier(days, locationType) {
@@ -178,8 +200,10 @@
             const computedLoc = this.classifyLocationType(descFull, job.job_location || '');
             job.location_type = (job.location_type === 'remote') ? 'remote' : computedLoc;
 
+            // Feed-supplied salaries pass through the SAME coherence guard as the
+            // parser (Remotive/Muse ranges can be reversed or in another currency).
             const sal = (job.salary_parseable && (job.salary_max > 0 || job.salary_min > 0))
-                ? { min: job.salary_min || 0, max: job.salary_max || 0, parseable: true }
+                ? this._sanitizeSalary(job.salary_min || 0, job.salary_max || 0)
                 : this.parseSalary(descFull);
             job.salary_min = sal.min; job.salary_max = sal.max; job.salary_parseable = sal.parseable;
             const salaryMid = sal.parseable ? (sal.max > 0 && sal.min > 0 ? (sal.min + sal.max) / 2 : (sal.max || sal.min)) : 0;
@@ -227,20 +251,30 @@
             }
             deltaX = clamp(deltaX, 0, 1);
 
-            // Cross-domain de-prioritization (NON-FATAL): if the TITLE clearly belongs
-            // to a domain the candidate didn't select, damp the fit signal so a
-            // coincidental keyword overlap can't masquerade as a strong match. This must
-            // never short-circuit scoring — every posting still needs toxicity (so an
-            // off-field scam is still caught for Inferno) and full Core/trajectory math.
-            // The actual hide/zone decision is owned by distributeAndRank's fit gates.
-            const userCats = (userProfile && userProfile.categories) ? userProfile.categories.map(c => String(c).toLowerCase()) : [];
-            if (userCats.length) {
-                const TECH_RE  = /\b(engineer|developer|devops|back[- ]?end|front[- ]?end|programmer|data scientist|software architect|\bsre\b|ios|android)\b/i;
-                const SALES_RE = /\b(account executive|sales rep(?:resentative)?|\bsdr\b|\bbdr\b|account manager|business development|sales director|inside sales)\b/i;
-                if (!userCats.includes('tech') && TECH_RE.test(title)) deltaX *= 0.4;
-                else if (!userCats.includes('sales') && SALES_RE.test(title)) deltaX *= 0.4;
-                deltaX = clamp(deltaX, 0, 1);
+            // DOMAIN-COMPETENCY GATE (primary, NON-FATAL): damp Delta-X when the job's
+            // domain is one the candidate has little real standing in (derived from the
+            // résumé, not the search categories). This is what stops a sales/ops résumé
+            // from false-matching software-engineering / data-science / clinical roles
+            // on shared buzzwords ("systems", "AI", "red team", "pipeline"). It must
+            // NEVER short-circuit — every posting still gets full toxicity/Core/trajectory
+            // math; the hide/zone decision stays with distributeAndRank's fit gates.
+            const affinity = (userProfile && userProfile.domainAffinity) || null;
+            if (affinity && window.competencyProfiler) {
+                const dc = window.competencyProfiler.compatMultiplier(affinity, job);
+                deltaX *= dc.mult;
+                if (dc.compat !== null) { job.domain_compat = Math.round(dc.compat * 100); job.primary_domain = dc.primary; }
+            } else {
+                // Fallback when there's no résumé profile: the older title-based damp
+                // against un-selected categories.
+                const userCats = (userProfile && userProfile.categories) ? userProfile.categories.map(c => String(c).toLowerCase()) : [];
+                if (userCats.length) {
+                    const TECH_RE  = /\b(engineer|developer|devops|back[- ]?end|front[- ]?end|programmer|data scientist|software architect|\bsre\b|ios|android)\b/i;
+                    const SALES_RE = /\b(account executive|sales rep(?:resentative)?|\bsdr\b|\bbdr\b|account manager|business development|sales director|inside sales)\b/i;
+                    if (!userCats.includes('tech') && TECH_RE.test(title)) deltaX *= 0.4;
+                    else if (!userCats.includes('sales') && SALES_RE.test(title)) deltaX *= 0.4;
+                }
             }
+            deltaX = clamp(deltaX, 0, 1);
 
             job.delta_x = deltaX;
             job.fit_score = Math.round(deltaX * 100);
@@ -263,16 +297,27 @@
             // 6. core_score
             job.match_score = this._adaptiveCoreScore(deltaX, payScore, cult.cultureScore, ai);
             
-            // 7/8. trajectory
+            // 7/8. trajectory — DUAL-BASELINE anchor.
+            // A candidate with a high PEAK but a low RECENT level (an underemployed
+            // senior — the exact case this platform exists for) is realistically
+            // re-hired somewhere BETWEEN the two, not at their peak. Anchoring the
+            // trajectory to the peak alone made every real job a "step down" and left
+            // Moonshot mathematically empty. The effective baseline = floor midpoint
+            // of peak & recent: it collapses to a single level for a linear career
+            // (peak==recent) and depresses toward recent when there's a deficit.
             const jobSen = SENIORITY_MAP[job.seniority_level] !== undefined ? SENIORITY_MAP[job.seniority_level] : 0;
-            const peakSen = (userProfile && userProfile.peakSeniority) || 2;
-            const recentSen = (userProfile && userProfile.recentSeniority) || peakSen;
+            const peakSen   = clamp(Number((userProfile && (userProfile.peakSeniority ?? userProfile.baselineSeniority)) ?? 2) || 2, 1, 4);
+            const recentSen = clamp(Number((userProfile && userProfile.recentSeniority) ?? peakSen) || peakSen, 1, 4);
+            const effectiveBaseline = clamp(Math.floor((peakSen + recentSen) / 2), 1, 4);
+            job.effective_baseline = effectiveBaseline;
             if (jobSen === 0) {
                 job.trajectory_peak = null;
                 job.trajectory_recent = null;
+                job.trajectory_effective = null;
             } else {
                 job.trajectory_peak = jobSen - peakSen;
                 job.trajectory_recent = jobSen - recentSen;
+                job.trajectory_effective = jobSen - effectiveBaseline;
             }
             
             // 9. transition_friction
@@ -351,7 +396,7 @@
 
             // ── 4. ZONE by trajectory (Delta-Y), gated by fit (Delta-X).
             for (const j of relevant) {
-                const dy  = j.trajectory_recent;   // job − recent seniority; null if level unknown
+                const dy  = j.trajectory_effective;   // job − dual-baseline anchor; null if level unknown
                 const fit = j.delta_x || 0;
                 let zone;
                 if (dy === null || dy === undefined) {

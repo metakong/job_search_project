@@ -5,6 +5,22 @@
 (function () {
     'use strict';
 
+    // Expanded, data-driven quick presets. `cat` maps to The Muse's category
+    // vocabulary (see mapToMuseCategories in app.js); `q` seeds high-signal search
+    // terms. Adding a preset here is all that's needed to broaden coverage.
+    const PRESETS = [
+        { id: 'sales',      cat: 'sales',      label: 'Sales',            q: ['Business Development', 'Account Executive', 'Sales Manager', 'Revenue Operations'] },
+        { id: 'operations', cat: 'operations', label: 'Operations',       q: ['Operations Manager', 'Process Improvement', 'Program Manager', 'Chief of Staff'] },
+        { id: 'tech',       cat: 'tech',       label: 'Tech & AI',        q: ['Software Engineer', 'Data Operations', 'Systems Architecture'] },
+        { id: 'marketing',  cat: 'marketing',  label: 'Marketing',        q: ['Marketing Manager', 'Growth Marketing', 'Content Strategy', 'Brand Manager'] },
+        { id: 'finance',    cat: 'finance',    label: 'Finance & Accounting', q: ['Financial Analyst', 'Accounting Manager', 'FP&A', 'Controller'] },
+        { id: 'product',    cat: 'product',    label: 'Product',          q: ['Product Manager', 'Product Owner', 'Program Manager'] },
+        { id: 'data',       cat: 'data',       label: 'Data & Analytics', q: ['Data Analyst', 'Data Scientist', 'Business Intelligence'] },
+        { id: 'support',    cat: 'support',    label: 'Customer Success',  q: ['Customer Success Manager', 'Account Manager', 'Customer Support'] },
+        { id: 'hr',         cat: 'hr',         label: 'HR & Recruiting',  q: ['Recruiter', 'Talent Acquisition', 'People Operations', 'HR Manager'] },
+        { id: 'design',     cat: 'design',     label: 'Design & UX',      q: ['Product Designer', 'UX Designer', 'UI Designer'] },
+    ];
+
     const setupWizard = {
         async init() {
             const profile = await window.dbAdapter.getUserProfile();
@@ -21,7 +37,6 @@
             const dialog = document.createElement('dialog');
             dialog.id = 'setup-wizard-dialog';
             dialog.className = 'setup-wizard-dialog';
-            const sen = currentProfile.baselineSeniority || 2;
             dialog.innerHTML = `
                 <article class="setup-wizard-card">
                     <header>
@@ -47,7 +62,7 @@
                                     <input type="number" id="wizard-salary" value="${escAttr(currentProfile.salaryFloor || 40000)}" required>
                                 </div>
                                 <div>
-                                    <label for="wizard-peak-seniority">Your Peak Career Level</label>
+                                    <label for="wizard-peak-seniority">Peak Career Level <span style="display:block; font-weight:400; font-size:0.72rem; color:var(--text-muted);">The highest level you've ever held.</span></label>
                                     <select id="wizard-peak-seniority">
                                         <option value="1" ${currentProfile.peakSeniority === 1 ? 'selected' : ''}>Entry / Associate</option>
                                         <option value="2" ${(currentProfile.peakSeniority === 2 || !currentProfile.peakSeniority) ? 'selected' : ''}>Senior / Individual Contributor</option>
@@ -56,7 +71,7 @@
                                     </select>
                                 </div>
                                 <div>
-                                    <label for="wizard-recent-seniority">Your Recent Level</label>
+                                    <label for="wizard-recent-seniority">Realistic Current Level <span style="display:block; font-weight:400; font-size:0.72rem; color:var(--text-muted);">What you'd most likely be hired at today. Set below your peak if you've had a gap, pivot, or step-down — this anchors your zones.</span></label>
                                     <select id="wizard-recent-seniority">
                                         <option value="1" ${currentProfile.recentSeniority === 1 ? 'selected' : ''}>Entry / Associate</option>
                                         <option value="2" ${(currentProfile.recentSeniority === 2 || !currentProfile.recentSeniority) ? 'selected' : ''}>Senior / Individual Contributor</option>
@@ -67,11 +82,9 @@
                             </div>
                             <label for="wizard-custom-roles" style="margin-top:0.5rem;">Target Roles / Search Terms <span style="color:var(--text-muted);font-weight:400;">(one per line or comma-separated — this drives your search)</span></label>
                             <textarea id="wizard-custom-roles" rows="3" placeholder="e.g.\nOperations Manager\nRevenue Operations\nProcess Improvement">${esc((currentProfile.search_queries || []).join('\n'))}</textarea>
-                            <label style="margin-top:0.5rem;">Quick presets</label>
-                            <div style="display:flex; gap:1rem; flex-wrap:wrap;">
-                                <label><input type="checkbox" id="wizard-cat-sales"> Sales</label>
-                                <label><input type="checkbox" id="wizard-cat-ops"> Operations</label>
-                                <label><input type="checkbox" id="wizard-cat-tech"> Tech &amp; AI</label>
+                            <label style="margin-top:0.5rem;">Quick presets <span style="color:var(--text-muted);font-weight:400;">(optional — check any that fit; they add search terms & tune your matching)</span></label>
+                            <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:0.5rem 1rem;">
+                                ${PRESETS.map(p => `<label><input type="checkbox" id="wizard-cat-${p.id}"> ${esc(p.label)}</label>`).join('')}
                             </div>
                         </fieldset>
 
@@ -115,9 +128,10 @@
 
             // Pre-check category boxes from existing profile.
             const cats = currentProfile.categories || [];
-            if (cats.includes('sales')) document.getElementById('wizard-cat-sales').checked = true;
-            if (cats.includes('operations')) document.getElementById('wizard-cat-ops').checked = true;
-            if (cats.includes('tech')) document.getElementById('wizard-cat-tech').checked = true;
+            for (const p of PRESETS) {
+                const box = document.getElementById(`wizard-cat-${p.id}`);
+                if (box && cats.includes(p.cat)) box.checked = true;
+            }
 
             // Résumé parsing.
             const fileInput = document.getElementById('wizard-resume-file');
@@ -137,7 +151,7 @@
                     const cal = window.resumeParser.calibrateFromText(text, parseInt(salaryInput.value) || 40000);
                     peakSelect.value = String(cal.peakSeniority);
                     recentSelect.value = String(cal.recentSeniority);
-                    statusDiv.textContent = `✅ Parsed ${text.length} chars. Peak Level: ${peakSelect.options[peakSelect.selectedIndex].text}.`;
+                    statusDiv.textContent = `✅ Parsed ${text.length} chars. Peak: ${peakSelect.options[peakSelect.selectedIndex].text} · Realistic current: ${recentSelect.options[recentSelect.selectedIndex].text}. Adjust either if needed — they set your zones.`;
                     statusDiv.style.color = 'var(--color-tier1)';
                 } catch (err) {
                     statusDiv.textContent = `❌ Parsing failed: ${err.message}`;
@@ -155,18 +169,23 @@
                 const customRaw = document.getElementById('wizard-custom-roles').value.trim();
                 if (customRaw) search_queries = customRaw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
 
-                if (document.getElementById('wizard-cat-sales').checked) { categories.push('sales'); search_queries.push('Business Development', 'Revenue Operations', 'Sales Director', 'Account Executive'); }
-                if (document.getElementById('wizard-cat-ops').checked) { categories.push('operations'); search_queries.push('Operations Manager', 'Process Improvement', 'Strategy', 'Chief of Staff'); }
-                if (document.getElementById('wizard-cat-tech').checked) { categories.push('tech'); search_queries.push('AI Systems', 'Data Operations', 'Systems Architecture'); }
+                for (const p of PRESETS) {
+                    const box = document.getElementById(`wizard-cat-${p.id}`);
+                    if (box && box.checked) { categories.push(p.cat); search_queries.push(...p.q); }
+                }
                 search_queries = Array.from(new Set(search_queries));
 
                 const enableSemanticMatching = document.getElementById('wizard-semantic').checked;
-                
+
                 // Keep baselineSeniority as fallback for old data in case anything still references it,
                 // but we mainly write peakSeniority and recentSeniority
                 const peak = parseInt(peakSelect.value) || 2;
                 const recent = parseInt(recentSelect.value) || peak;
-                
+
+                // Competency shape from the résumé (gates Delta-X by domain).
+                const domainAffinity = (extractedResumeText && window.competencyProfiler)
+                    ? window.competencyProfiler.profileResume(extractedResumeText).affinity : null;
+
                 await window.dbAdapter.saveUserProfile({
                     location: document.getElementById('wizard-location').value,
                     radius: parseInt(document.getElementById('wizard-radius').value) || 30,
@@ -174,6 +193,8 @@
                     baselineSeniority: peak, // backwards compatibility
                     peakSeniority: peak,
                     recentSeniority: recent,
+                    domainAffinity,
+                    calibrationVersion: 3, // these are user-confirmed → don't auto-migrate over them
                     categories,
                     search_queries,
                     resumeText: extractedResumeText,

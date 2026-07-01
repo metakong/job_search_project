@@ -3,11 +3,23 @@
 // =====================================================================
 
 const CONFIG = {
-    VERSION: '13.4.0',
+    VERSION: '13.7.0',
     SCORING_CHUNK_SIZE: 25,
     FETCH_THROTTLE_MS: 500,
     FETCH_TIMEOUT_MS: 8000,      // per-attempt CORS fetch timeout (AbortController); keeps a fully-blocked sweep responsive
     WORKER_TIMEOUT_MS: 10000,
+
+    // Indeed discontinued its public RSS feed years ago; the endpoint returns an
+    // HTML/error page (never job XML) and is WAF/CORS-blocked on every proxy. It
+    // only spammed the console with ~200 red errors and cost ~16s per sweep, so it
+    // is OFF by default. A Phase-2 technical user with a working private proxy can
+    // flip this back on.
+    ENABLE_INDEED_RSS: false,
+
+    // Salaries whose whole range tops out below this (annual, USD) are treated as
+    // unparseable — almost always hourly-misreads or foreign-currency figures, not
+    // real pay. (A separate absolute floor also rejects sub-$7k lower bounds.)
+    SALARY_MIN_PLAUSIBLE_ANNUAL: 18000,
 
     // ── Distribution / zoning (Phase 13.4) ──────────────────────────────
     // Zones are defined by the two candidate-relative axes — résumé fit

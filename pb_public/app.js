@@ -112,14 +112,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (strategyDial && profile && profile.strategyDial) strategyDial.value = profile.strategyDial;
     updateStrategyDialState();
 
+    // One-time migration: existing résumé users were calibrated by the old parser,
+    // which frequently set recent == peak (== Director), collapsing the trajectory
+    // axis. Re-derive peak/recent with the corrected dual-baseline parser so their
+    // zones re-route correctly without re-running setup.
+    const recalibrated = await ensureCalibration(profile);
+
     await loadAllJobs();
     fetchData(1, false);
 
-    if (localStorage.getItem('requires_rescore_v13') === 'true') {
+    if (recalibrated || localStorage.getItem('requires_rescore_v13') === 'true') {
         localStorage.removeItem('requires_rescore_v13');
         runBackgroundRescore();
     }
 });
+
+// Re-derive the dual-baseline seniority from a stored résumé when the calibration
+// engine version has advanced. Versioned & one-shot so it never clobbers a user's
+// later manual edits. Returns true if the profile changed (→ trigger a re-score).
+const CALIBRATION_VERSION = 3;
+async function ensureCalibration(profile) {
+    try {
+        if (!profile || !profile.resumeText || profile.resumeText.length < 50) return false;
+        if ((profile.calibrationVersion || 0) >= CALIBRATION_VERSION) return false;
+        const cal = window.resumeParser.calibrateFromText(profile.resumeText, profile.salaryFloor || 40000);
+        await window.dbAdapter.saveUserProfile({
+            peakSeniority: cal.peakSeniority,
+            recentSeniority: cal.recentSeniority,
+            baselineSeniority: cal.peakSeniority,
+            softSkills: cal.softSkills,
+            domainAffinity: cal.domainAffinity,       // competency shape → gates Delta-X by domain
+            calibrationVersion: CALIBRATION_VERSION
+        });
+        console.log(`[App] Re-calibrated résumé → Peak=${cal.peakSeniority}, Recent=${cal.recentSeniority}, domains=${cal.domainAffinity ? Object.entries(cal.domainAffinity).filter(([, v]) => v > 0.3).map(([k]) => k).join(',') : 'n/a'}.`);
+        return true;
+    } catch (err) {
+        console.warn('[App] Calibration migration skipped:', err);
+        return false;
+    }
+}
 
 // ── In-memory cache ─────────────────────────────────────────────────────
 async function loadAllJobs() {
@@ -136,50 +167,58 @@ async function runIngestionSweep() {
         ingestSweepBtn.disabled = true;
         ingestSweepBtn.textContent = '⏳ Scraping…';
         loader.style.display = 'flex';
-        updateLoadingText('Ingesting direct RSS & API streams…');
+        updateLoadingText('Ingesting job streams…');
 
         const profile = await window.dbAdapter.getUserProfile();
         const queries = (profile.search_queries && profile.search_queries.length > 0)
             ? profile.search_queries : window.CONFIG.DEFAULT_SEARCH_QUERIES;
         const location = profile.location || 'Springfield, MO';
+        const enableIndeed = window.CONFIG && window.CONFIG.ENABLE_INDEED_RSS === true;
 
         let rawJobs = [];
+        // Per-source raw tally → surfaced to the user as a transparent ingestion
+        // trace (console table + persisted report), so the "N duplicates skipped"
+        // number is never a black box.
+        const sourceCounts = {};
+        const tally = (name, n) => { sourceCounts[name] = (sourceCounts[name] || 0) + n; };
 
         // Fetch sequentially to prevent proxy overloading
         for (const query of queries) {
-            updateLoadingText(`Fetching jobs for: ${query}...`);
-            
-            // 1. Fetch RSS
-            try { 
-                const rssJobs = await window.rssAdapter.fetchJobs(query, location);
-                rawJobs.push(...rssJobs);
+            updateLoadingText(`Fetching jobs for: ${query}…`);
+
+            // 1. Indeed RSS — OFF by default (dead endpoint; see config.ENABLE_INDEED_RSS).
+            if (enableIndeed) {
+                try {
+                    const rssJobs = await window.rssAdapter.fetchJobs(query, location);
+                    tally('Indeed RSS', rssJobs.length); rawJobs.push(...rssJobs);
+                } catch (err) { console.error(`[Ingest] Indeed RSS "${query}" failed:`, err); }
+                await sleep(1000);
             }
-            catch (err) { console.error(`[Ingest] Indeed RSS "${query}" failed:`, err); }
-            await sleep(1000); // 1-second throttle
-            
-            // 2. Fetch Remotive
-            try { 
+
+            // 2. Remotive (remote-focused JSON API).
+            try {
                 const remotiveJobs = await window.remotiveApi.fetchJobs([query]);
-                rawJobs.push(...remotiveJobs);
-            } 
-            catch (err) { console.error(`[Ingest] Remotive "${query}" failed:`, err); }
+                tally('Remotive', remotiveJobs.length); rawJobs.push(...remotiveJobs);
+            } catch (err) { console.error(`[Ingest] Remotive "${query}" failed:`, err); }
             await sleep(1000); // 1-second throttle
         }
 
         // 3. The Muse — key-free, US-centric, seniority-aware. Fetched once (it
         // filters by location/category, not keyword), so localized business roles
-        // survive even when Indeed RSS is WAF-blocked.
+        // survive even when remote feeds dominate.
         updateLoadingText('Querying The Muse (localized roles)…');
         try {
             const museCategories = mapToMuseCategories(profile.categories || []);
             const museJobs = await window.themuseApi.fetchJobs(location, museCategories, 2, profile.museApiKey || '');
-            rawJobs.push(...museJobs);
+            tally('The Muse', museJobs.length); rawJobs.push(...museJobs);
         } catch (err) { console.error('[Ingest] The Muse failed:', err); }
 
         updateLoadingText('Polling ATS watchlists…');
         // 4. ATS direct watchlists (Greenhouse / Lever) + optional sitemap careers pages.
-        try { rawJobs.push(...await pollWatchlist()); }
-        catch (err) { console.error('[Ingest] Watchlist poll failed:', err); }
+        try {
+            const atsJobs = await pollWatchlist();
+            tally('ATS Watchlist', atsJobs.length); rawJobs.push(...atsJobs);
+        } catch (err) { console.error('[Ingest] Watchlist poll failed:', err); }
 
         console.log(`[Ingest] Collected ${rawJobs.length} raw postings.`);
 
@@ -211,15 +250,40 @@ async function runIngestionSweep() {
         setStat('stat-raw-ingested', rawJobs.length);
         setStat('stat-discarded', hidden + duplicates);
 
+        // ── Transparent ingestion trace ─────────────────────────────────────────
+        // Persist a text-readable report and print a per-source table. The most
+        // common source of "duplicates" is the SAME remote listing being returned
+        // for several of your search terms (Remotive ignores locality and returns
+        // its recent global pool per query) — collapsed to unique rows on insert.
+        const report = {
+            timestamp: new Date().toISOString(),
+            location,
+            queries,
+            per_source_raw: sourceCounts,
+            raw_collected: rawJobs.length,
+            new_unique_inserted: newInserts,
+            duplicates_skipped: duplicates,
+            hidden_after_scoring: hidden,
+            note: 'duplicates_skipped = identical listings returned by multiple search terms/sources, collapsed by company+title+location hash. hidden_after_scoring = off-target (noise) or blacklisted.'
+        };
+        try { localStorage.setItem('lastSweepReport', JSON.stringify(report)); } catch { /* quota */ }
+        console.groupCollapsed(`[Ingest] Sweep report — ${newInserts} new / ${duplicates} dupes / ${hidden} hidden`);
+        console.table(sourceCounts);
+        console.log('Full report (also saved to localStorage.lastSweepReport):', report);
+        console.groupEnd();
+
         // Honest, actionable completion message — never just "0 added" with no guidance.
+        const srcLine = Object.entries(sourceCounts).map(([k, v]) => `${k}: ${v}`).join(' · ') || 'no sources responded';
         let msg;
         if (rawJobs.length === 0) {
             msg = 'No jobs came through this time. Public job-board proxies are sometimes rate-limited or temporarily blocked — try another sweep in a few minutes. For more reliable access, set a custom CORS proxy under Settings → Edit Setup Parameters → Advanced Settings.';
         } else if (newInserts === 0) {
-            msg = `Sweep complete — no new listings (all ${duplicates} found were already in your database).`;
+            msg = `Sweep complete — no new listings (all ${duplicates} found were already in your database).\n\nSources this sweep — ${srcLine}.`;
         } else {
             msg = `Sweep complete! ${newInserts} new listing${newInserts === 1 ? '' : 's'} added` +
-                  (duplicates ? `, ${duplicates} duplicate${duplicates === 1 ? '' : 's'} skipped.` : '.');
+                  (duplicates ? `, ${duplicates} duplicate${duplicates === 1 ? '' : 's'} skipped.` : '.') +
+                  `\n\nSources (raw) — ${srcLine}.` +
+                  (duplicates ? `\nDuplicates are the same listing returned by multiple search terms/sources; only unique roles are kept. Full breakdown in the browser console + saved to your last-sweep log.` : '');
         }
         alert(msg);
         fetchData(1, false);
@@ -407,7 +471,10 @@ function mapJob(r) {
         computed_zone: r.computed_zone || 'strike',
         inferno_circle: r.inferno_circle || null,
         delta_x: r.delta_x ?? 0,
-        delta_y: r.trajectory_recent !== undefined ? r.trajectory_recent : (r.delta_y ?? null)
+        // Trajectory shown = the dual-baseline effective axis that actually decides
+        // the zone (falls back to the older field for pre-migration records).
+        delta_y: (r.trajectory_effective !== undefined) ? r.trajectory_effective
+               : (r.trajectory_recent !== undefined ? r.trajectory_recent : (r.delta_y ?? null))
     };
 }
 

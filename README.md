@@ -19,8 +19,8 @@ Proprietary job platforms optimize for employers. This one optimizes for **you, 
 
 Every job is placed on two **candidate-relative** axes:
 
-- **Delta-X — Fit (0–1):** how well the job matches *your résumé* (keyword overlap, supplementary skills, and optional AI semantic similarity).
-- **Delta-Y — Trajectory (steps):** the job's seniority minus your current level.
+- **Delta-X — Fit (0–1):** how well the job matches *your résumé* — keyword overlap and supplementary skills, **gated by a competency-domain check** so a job in a field you don't actually work in can't false-match on shared buzzwords (a sales/ops résumé won't read as a 90% fit for a C++ or data-science role just because both mention "systems" or "AI"), plus optional AI semantic similarity.
+- **Delta-Y — Trajectory (steps):** the job's seniority minus your **effective baseline** — a *dual-baseline* anchor midway between your career **peak** and your **realistic current level**. If you've had a gap, pivot, or step-down (a high peak but a modest recent role), your anchor sits below your peak, so a return to senior/director roles correctly reads as a *reach up* (Moonshot) rather than a step down. For a straight-line career the two baselines coincide and it's just your level.
 
 From those, each job lands in one zone:
 
@@ -51,7 +51,7 @@ Changing the dial instantly filters your feed to reveal ONLY that distinct subse
 |---|---|
 | **Zero Setup** | No Python, no Node, no database to run. Open in a browser → follow the wizard → done. |
 | **Offline-Capable PWA** | Installable; works offline after first load. |
-| **Résumé-Driven Matching** | Upload your PDF résumé (parsed locally, never uploaded). It defines your fit profile and auto-calibrates your seniority and salary floor. |
+| **Résumé-Driven Matching** | Upload your PDF résumé (parsed locally, never uploaded). It defines your fit profile and auto-calibrates your **peak** and **realistic-current** seniority (a dual-baseline anchor that keeps the zones honest for non-linear careers) plus your salary floor. Every value is editable in the wizard. |
 | **Calibrated Toxicity Detection** | Additive, weighted red-flag scoring grounded in real-world hiring-scam and exploitation research. Genuinely toxic posts get mapped to the 9 Circles of Hell; a single cliché never sends a job there. |
 | **Ghost Job Detection** | Flags stale, salary-free, perpetual-pipeline listings likely posted to farm résumés. |
 | **Culture Score** | Rewards green flags — pay transparency above all — and penalizes yellow flags. |
@@ -103,8 +103,8 @@ Nothing else — your résumé, your scores, your tracked applications — ever 
 ```
 ┌───────────────────────────────────────────────┐
 │  EXTRACTORS (browser, direct → CORS proxy)     │
-│  rss-adapter · remotive-api · themuse-api      │
-│  · sitemap-parser + Greenhouse/Lever ATS       │
+│  remotive-api · themuse-api · Greenhouse/Lever │
+│  ATS · sitemap-parser  (Indeed RSS: off — dead)│
 └───────────────────────┬───────────────────────┘
                         ▼  raw listings
 ┌───────────────────────────────────────────────┐
@@ -112,6 +112,7 @@ Nothing else — your résumé, your scores, your tracked applications — ever 
 │  • ambiguity-index  → data entropy/confidence  │
 │  • transition-friction → career pivot logic    │
 │  • skill-matcher    → résumé-driven Fit (Δx)   │
+│  • competency-profiler → domain gate on Δx     │
 │  • evaluator        → calibrated toxicity / 9 Circles │
 │  • culture-evaluator→ culture vector           │
 │  • industry-classifier → industry tag          │
@@ -141,8 +142,8 @@ pb_public/                 # ← Serve this directory (static web root)
     ├── extractors/                    # rss-adapter, remotive-api, themuse-api, sitemap-parser
     ├── ai/                            # resume-parser, transformers-engine (opt-in)
     ├── workers/semantic-worker.js     # embedding worker (opt-in)
-    ├── scoring/                       # evaluator, skill-matcher, culture-evaluator,
-    │                                  #   industry-classifier, scoring-coordinator
+    ├── scoring/                       # evaluator, skill-matcher, competency-profiler,
+    │                                  #   culture-evaluator, industry-classifier, scoring-coordinator
     └── features/setup-wizard.js
 ```
 
